@@ -77,16 +77,23 @@ fun HistoryScreen(
     var reportToView by remember { mutableStateOf<ShiftReport?>(null) }
     var reportToDelete by remember { mutableStateOf<ShiftReport?>(null) }
 
-    val filteredReports = remember(reports, searchQuery) {
-        if (searchQuery.isBlank()) {
-            reports
-        } else {
-            reports.filter {
-                it.receivingEmployee.contains(searchQuery, ignoreCase = true) ||
-                it.departingEmployee.contains(searchQuery, ignoreCase = true) ||
-                it.postName.contains(searchQuery, ignoreCase = true) ||
-                it.reportContent.contains(searchQuery, ignoreCase = true)
+    var filterSyncStatus by remember { mutableStateOf("TODOS") }
+
+    val filteredReports = remember(reports, searchQuery, filterSyncStatus) {
+        reports.filter { report ->
+            val matchesQuery = searchQuery.isBlank() ||
+                report.receivingEmployee.contains(searchQuery, ignoreCase = true) ||
+                report.departingEmployee.contains(searchQuery, ignoreCase = true) ||
+                report.postName.contains(searchQuery, ignoreCase = true) ||
+                report.reportContent.contains(searchQuery, ignoreCase = true)
+
+            val matchesFilter = when (filterSyncStatus) {
+                "PENDENTES" -> report.isPendingSync
+                "ENVIADOS" -> !report.isPendingSync
+                else -> true
             }
+
+            matchesQuery && matchesFilter
         }
     }
 
@@ -100,13 +107,13 @@ fun HistoryScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "📁 Histórico de Passagens de Posto",
+                    text = "📁 Histórico & Sincronização Room",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "Consulte relatórios arquivados e reenvie para o WhatsApp quando necessário.",
+                    text = "Consulte relatórios arquivados, sincronize checklists salvos offline e reenvie para o WhatsApp.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -128,6 +135,42 @@ fun HistoryScreen(
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true
                 )
+            }
+
+            // Sync Filter Chips
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val pendingCount = reports.count { it.isPendingSync }
+                    val sentCount = reports.count { !it.isPendingSync }
+
+                    androidx.compose.material3.FilterChip(
+                        selected = filterSyncStatus == "TODOS",
+                        onClick = { filterSyncStatus = "TODOS" },
+                        label = { Text("Todos (${reports.size})", fontSize = 12.sp) }
+                    )
+
+                    androidx.compose.material3.FilterChip(
+                        selected = filterSyncStatus == "PENDENTES",
+                        onClick = { filterSyncStatus = "PENDENTES" },
+                        label = {
+                            Text(
+                                "⏳ Pendentes ($pendingCount)",
+                                fontSize = 12.sp,
+                                fontWeight = if (pendingCount > 0) FontWeight.Bold else FontWeight.Normal,
+                                color = if (pendingCount > 0) Color(0xFFF59E0B) else Color.Unspecified
+                            )
+                        }
+                    )
+
+                    androidx.compose.material3.FilterChip(
+                        selected = filterSyncStatus == "ENVIADOS",
+                        onClick = { filterSyncStatus = "ENVIADOS" },
+                        label = { Text("✅ Enviados ($sentCount)", fontSize = 12.sp) }
+                    )
+                }
             }
 
             if (filteredReports.isEmpty()) {

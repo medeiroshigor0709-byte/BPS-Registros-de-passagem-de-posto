@@ -16,5 +16,10 @@ data class ShiftReport(
     val cameraWorkingCount: String = "28 funcionando",
     val monitor1Details: String = "Câmera 15 fora do ar",
     val monitor2Details: String = "Câmeras 11,15 e 16 fora do ar",
-    val generalNotes: String = ""
+    val generalNotes: String = "",
+    val isPendingSync: Boolean = false, // True if filled offline / waiting to send
+    val syncStatus: String = "ENVIADO", // "PENDENTE", "ENVIADO", "RASCUNHO"
+    val syncedAt: Long? = null,
+    val hasPhotos: Boolean = false,
+    val photoCount: Int = 0
 )

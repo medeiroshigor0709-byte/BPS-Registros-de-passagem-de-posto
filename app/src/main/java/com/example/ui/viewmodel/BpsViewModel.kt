@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
@@ -11,8 +12,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ShiftDraft
 import com.example.data.model.ShiftReport
 import com.example.data.repository.BpsRepository
+import com.example.util.NetworkMonitor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +23,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.util.Calendar
 
 data class ItemCheckState(
@@ -27,6 +32,12 @@ data class ItemCheckState(
     val observation: String = "",
     val photoPath: String? = null
 )
+
+enum class MessageFormatStyle(val label: String, val shortDesc: String) {
+    TOPICS("Em Tópicos (•)", "Itens em lista com marcadores"),
+    LINES("Linhas Simples", "Um item por linha"),
+    INLINE("Linha Contínua", "Texto corrido original")
+}
 
 data class ShiftFormUiState(
     val greeting: String = "Boa Noite",
@@ -39,12 +50,17 @@ data class ShiftFormUiState(
     val monitor1Details: String = "1 Câmera 15 fora do ar",
     val monitor2Details: String = "2 Câmeras 11,15 e 16 fora do ar",
     val generalNotes: String = "",
-    val isCamerasActive: Boolean = true
+    val isCamerasActive: Boolean = true,
+    val formatStyle: MessageFormatStyle = MessageFormatStyle.TOPICS
 )
 
 class BpsViewModel(
-    private val repository: BpsRepository
+    private val repository: BpsRepository,
+    private val networkMonitor: NetworkMonitor
 ) : ViewModel() {
+
+    val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), networkMonitor.checkCurrentConnectivity())
 
     val employees: StateFlow<List<Employee>> = repository.allEmployees
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -55,6 +71,12 @@ class BpsViewModel(
     val reportsHistory: StateFlow<List<ShiftReport>> = repository.allReports
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val pendingReports: StateFlow<List<ShiftReport>> = repository.pendingReports
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pendingCount: StateFlow<Int> = repository.pendingCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     private val _formState = MutableStateFlow(ShiftFormUiState())
     val formState: StateFlow<ShiftFormUiState> = _formState.asStateFlow()
 
@@ -64,7 +86,26 @@ class BpsViewModel(
     init {
         viewModelScope.launch {
             repository.ensureDefaultDataSeeded()
+            restoreDraftIfExists()
             detectAutoGreeting()
+        }
+    }
+
+    private suspend fun restoreDraftIfExists() {
+        val draft = repository.getDraftDirect()
+        if (draft != null) {
+            _formState.update { current ->
+                current.copy(
+                    greeting = draft.greeting,
+                    postName = draft.postName,
+                    receivingEmployee = draft.receivingEmployee,
+                    departingEmployee = draft.departingEmployee,
+                    camerasWorkingCount = draft.cameraWorkingCount,
+                    monitor1Details = draft.monitor1Details,
+                    monitor2Details = draft.monitor2Details,
+                    generalNotes = draft.generalNotes
+                )
+            }
         }
     }
 
@@ -75,23 +116,29 @@ class BpsViewModel(
             hour in 12..17 -> "Boa Tarde"
             else -> "Boa Noite"
         }
-        _formState.update { it.copy(greeting = defaultGreeting) }
+        if (_formState.value.greeting.isBlank()) {
+            _formState.update { it.copy(greeting = defaultGreeting) }
+        }
     }
 
     fun updateGreeting(greeting: String) {
         _formState.update { it.copy(greeting = greeting) }
+        autosaveDraft()
     }
 
     fun updatePostName(postName: String) {
         _formState.update { it.copy(postName = postName) }
+        autosaveDraft()
     }
 
     fun updateReceivingEmployee(name: String) {
         _formState.update { it.copy(receivingEmployee = name) }
+        autosaveDraft()
     }
 
     fun updateDepartingEmployee(name: String) {
         _formState.update { it.copy(departingEmployee = name) }
+        autosaveDraft()
     }
 
     fun updateItemStatus(itemId: Long, status: String, observation: String = "") {
@@ -105,6 +152,7 @@ class BpsViewModel(
             )
             state.copy(itemStates = currentMap)
         }
+        autosaveDraft()
     }
 
     fun attachPhotoToItem(itemId: Long, photoPath: String) {
@@ -127,23 +175,23 @@ class BpsViewModel(
         }
     }
 
-    fun saveBitmapToLocalCache(context: Context, bitmap: android.graphics.Bitmap): String {
-        val photosDir = java.io.File(context.cacheDir, "checklist_photos")
+    fun saveBitmapToLocalCache(context: Context, bitmap: Bitmap): String {
+        val photosDir = File(context.cacheDir, "checklist_photos")
         if (!photosDir.exists()) photosDir.mkdirs()
-        val file = java.io.File(photosDir, "foto_${System.currentTimeMillis()}.jpg")
-        java.io.FileOutputStream(file).use { out ->
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+        val file = File(photosDir, "foto_${System.currentTimeMillis()}.jpg")
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
         }
         return file.absolutePath
     }
 
     fun copyUriToLocalCache(context: Context, uri: Uri): String? {
         return try {
-            val photosDir = java.io.File(context.cacheDir, "checklist_photos")
+            val photosDir = File(context.cacheDir, "checklist_photos")
             if (!photosDir.exists()) photosDir.mkdirs()
-            val file = java.io.File(photosDir, "foto_${System.currentTimeMillis()}.jpg")
+            val file = File(photosDir, "foto_${System.currentTimeMillis()}.jpg")
             context.contentResolver.openInputStream(uri)?.use { input ->
-                java.io.FileOutputStream(file).use { output ->
+                FileOutputStream(file).use { output ->
                     input.copyTo(output)
                 }
             }
@@ -161,52 +209,155 @@ class BpsViewModel(
                 monitor2Details = mon2
             )
         }
+        autosaveDraft()
     }
 
     fun updateGeneralNotes(notes: String) {
         _formState.update { it.copy(generalNotes = notes) }
+        autosaveDraft()
+    }
+
+    private fun autosaveDraft() {
+        viewModelScope.launch {
+            val s = _formState.value
+            val draft = ShiftDraft(
+                greeting = s.greeting,
+                postName = s.postName,
+                receivingEmployee = s.receivingEmployee,
+                departingEmployee = s.departingEmployee,
+                cameraWorkingCount = s.camerasWorkingCount,
+                monitor1Details = s.monitor1Details,
+                monitor2Details = s.monitor2Details,
+                generalNotes = s.generalNotes
+            )
+            repository.saveDraft(draft)
+        }
+    }
+
+    fun clearFormAndDraft() {
+        viewModelScope.launch {
+            repository.clearDraft()
+            _formState.value = ShiftFormUiState()
+            detectAutoGreeting()
+        }
+    }
+
+    fun updateMessageFormatStyle(style: MessageFormatStyle) {
+        _formState.update { it.copy(formatStyle = style) }
     }
 
     /**
-     * Builds the exact WhatsApp formatted message string matching user's requested syntax:
-     * "Boa Noite passo o posto para o porteiro: Higor    *PORTARIA*📱 Celular *OK*🔌 Carregador *OK* 📞 Interfone *OK*..."
+     * Builds the formatted message string.
+     * When style is TOPICS (default):
+     * Places each item on its own separate line in bulleted topics:
+     *
+     * Boa Noite passo o posto para o porteiro: Higor
+     *
+     * *PORTARIA*
+     * • 📱 Celular: *OK*
+     * • 🔌 Carregador: *OK*
+     * • 📞 Interfone: *OK*
+     * ...
      */
     fun buildFormattedMessage(activeItems: List<ChecklistTemplateItem>): String {
         val state = _formState.value
         val sb = StringBuilder()
-
-        // Header
         val recipient = if (state.receivingEmployee.isNotBlank()) state.receivingEmployee else "Porteiro"
-        sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}    ${state.postName}")
 
-        // Checklist items
-        for (item in activeItems) {
-            if (!item.isEnabled) continue
+        when (state.formatStyle) {
+            MessageFormatStyle.TOPICS -> {
+                // Em tópicos com marcadores (•) - um item embaixo do outro
+                sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}\n\n")
+                sb.append("${state.postName}\n")
 
-            if (item.isCamerasItem) {
-                // Cameras formatting
-                sb.append(" ")
-                val camText = buildString {
-                    append("${item.emoji} ${item.title}: ${state.camerasWorkingCount}")
-                    if (state.monitor1Details.isNotBlank()) {
-                        append(" *Monitor* ${state.monitor1Details}")
-                    }
-                    if (state.monitor2Details.isNotBlank()) {
-                        append(" *Monitor* ${state.monitor2Details}")
+                for (item in activeItems) {
+                    if (!item.isEnabled) continue
+
+                    if (item.isCamerasItem) {
+                        val camWorking = if (state.camerasWorkingCount.isNotBlank()) state.camerasWorkingCount else "OK"
+                        sb.append("• ${item.emoji} ${item.title}: ${camWorking}\n")
+                        if (state.monitor1Details.isNotBlank()) {
+                            sb.append("   ↳ *Monitor* ${state.monitor1Details}\n")
+                        }
+                        if (state.monitor2Details.isNotBlank()) {
+                            sb.append("   ↳ *Monitor* ${state.monitor2Details}\n")
+                        }
+                    } else {
+                        val check = state.itemStates[item.id] ?: ItemCheckState("OK")
+                        val statusText = when (check.status) {
+                            "OK" -> "*OK*"
+                            "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
+                            "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
+                            "NAO_POSSUI" -> "*N/A*"
+                            else -> "*${check.status}*"
+                        }
+                        val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
+                        sb.append("• ${item.emoji} ${item.title}: $statusText$photoBadge\n")
                     }
                 }
-                sb.append(camText)
-            } else {
-                val check = state.itemStates[item.id] ?: ItemCheckState("OK")
-                val statusText = when (check.status) {
-                    "OK" -> "*OK*"
-                    "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
-                    "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
-                    "NAO_POSSUI" -> "*N/A*"
-                    else -> "*${check.status}*"
+            }
+            MessageFormatStyle.LINES -> {
+                // Em linhas simples (sem marcador de ponto) - um item embaixo do outro
+                sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}\n\n")
+                sb.append("${state.postName}\n")
+
+                for (item in activeItems) {
+                    if (!item.isEnabled) continue
+
+                    if (item.isCamerasItem) {
+                        val camWorking = if (state.camerasWorkingCount.isNotBlank()) state.camerasWorkingCount else "OK"
+                        sb.append("${item.emoji} ${item.title}: ${camWorking}\n")
+                        if (state.monitor1Details.isNotBlank()) {
+                            sb.append("   ↳ *Monitor* ${state.monitor1Details}\n")
+                        }
+                        if (state.monitor2Details.isNotBlank()) {
+                            sb.append("   ↳ *Monitor* ${state.monitor2Details}\n")
+                        }
+                    } else {
+                        val check = state.itemStates[item.id] ?: ItemCheckState("OK")
+                        val statusText = when (check.status) {
+                            "OK" -> "*OK*"
+                            "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
+                            "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
+                            "NAO_POSSUI" -> "*N/A*"
+                            else -> "*${check.status}*"
+                        }
+                        val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
+                        sb.append("${item.emoji} ${item.title}: $statusText$photoBadge\n")
+                    }
                 }
-                val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
-                sb.append(" ${item.emoji} ${item.title} $statusText$photoBadge")
+            }
+            MessageFormatStyle.INLINE -> {
+                // Formato original em linha contínua
+                sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}    ${state.postName}")
+                for (item in activeItems) {
+                    if (!item.isEnabled) continue
+
+                    if (item.isCamerasItem) {
+                        sb.append(" ")
+                        val camText = buildString {
+                            append("${item.emoji} ${item.title}: ${state.camerasWorkingCount}")
+                            if (state.monitor1Details.isNotBlank()) {
+                                append(" *Monitor* ${state.monitor1Details}")
+                            }
+                            if (state.monitor2Details.isNotBlank()) {
+                                append(" *Monitor* ${state.monitor2Details}")
+                            }
+                        }
+                        sb.append(camText)
+                    } else {
+                        val check = state.itemStates[item.id] ?: ItemCheckState("OK")
+                        val statusText = when (check.status) {
+                            "OK" -> "*OK*"
+                            "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
+                            "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
+                            "NAO_POSSUI" -> "*N/A*"
+                            else -> "*${check.status}*"
+                        }
+                        val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
+                        sb.append(" ${item.emoji} ${item.title} $statusText$photoBadge")
+                    }
+                }
             }
         }
 
@@ -216,10 +367,10 @@ class BpsViewModel(
         }
 
         if (state.generalNotes.isNotBlank()) {
-            sb.append("\n📝 *Ocorrências/Obs:* ${state.generalNotes}")
+            sb.append("\n\n📝 *Ocorrências/Obs:* ${state.generalNotes}")
         }
 
-        return sb.toString()
+        return sb.toString().trimEnd()
     }
 
     /**
@@ -242,9 +393,57 @@ class BpsViewModel(
         return missing
     }
 
+    /**
+     * Saves a checklist locally in Room even without internet connection (Pending Sync)
+     */
+    fun saveReportOffline(formattedMessage: String, context: Context) {
+        viewModelScope.launch {
+            val state = _formState.value
+            val photosCount = state.itemStates.values.count { it.photoPath != null }
+            val report = ShiftReport(
+                greeting = state.greeting,
+                postName = state.postName,
+                departingEmployee = state.departingEmployee,
+                receivingEmployee = state.receivingEmployee,
+                reportContent = formattedMessage,
+                cameraWorkingCount = state.camerasWorkingCount,
+                monitor1Details = state.monitor1Details,
+                monitor2Details = state.monitor2Details,
+                generalNotes = state.generalNotes,
+                isPendingSync = true,
+                syncStatus = "PENDENTE",
+                hasPhotos = photosCount > 0,
+                photoCount = photosCount
+            )
+            repository.saveReport(report)
+            repository.clearDraft()
+            Toast.makeText(context, "Checklist salvo localmente no Room! Pronto para envio posterior.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun syncPendingReportToWhatsApp(report: ShiftReport, context: Context) {
+        sendToWhatsApp(context, report.reportContent)
+        viewModelScope.launch {
+            repository.markReportAsSynced(report.id)
+            Toast.makeText(context, "Relatório sincronizado e enviado!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun markReportAsSynced(reportId: Long) {
+        viewModelScope.launch {
+            repository.markReportAsSynced(reportId)
+        }
+    }
+
+    fun markAllAsSynced(context: Context) {
+        viewModelScope.launch {
+            repository.markAllAsSynced()
+            Toast.makeText(context, "Todos os relatórios foram marcados como sincronizados!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun sendToWhatsApp(context: Context, message: String) {
         try {
-            // First attempt direct WhatsApp url scheme which opens WhatsApp app and shows chat/group selection
             val encodedMessage = Uri.encode(message)
             val directWhatsappIntent = Intent(Intent.ACTION_VIEW).apply {
                 data = Uri.parse("https://api.whatsapp.com/send?text=$encodedMessage")
@@ -253,7 +452,6 @@ class BpsViewModel(
             context.startActivity(directWhatsappIntent)
             Toast.makeText(context, "Abrindo WhatsApp...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            // Fallback to standard ACTION_SEND chooser
             try {
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
@@ -268,7 +466,7 @@ class BpsViewModel(
             }
         }
 
-        // Also save automatically to history
+        // Also save automatically to history as sent
         saveCurrentReportToHistory(message)
     }
 
@@ -282,6 +480,7 @@ class BpsViewModel(
     fun saveCurrentReportToHistory(formattedMessage: String) {
         viewModelScope.launch {
             val state = _formState.value
+            val photosCount = state.itemStates.values.count { it.photoPath != null }
             val report = ShiftReport(
                 greeting = state.greeting,
                 postName = state.postName,
@@ -291,15 +490,49 @@ class BpsViewModel(
                 cameraWorkingCount = state.camerasWorkingCount,
                 monitor1Details = state.monitor1Details,
                 monitor2Details = state.monitor2Details,
-                generalNotes = state.generalNotes
+                generalNotes = state.generalNotes,
+                isPendingSync = false,
+                syncStatus = "ENVIADO",
+                syncedAt = System.currentTimeMillis(),
+                hasPhotos = photosCount > 0,
+                photoCount = photosCount
             )
             repository.saveReport(report)
+            repository.clearDraft()
         }
     }
 
     fun deleteReport(report: ShiftReport) {
         viewModelScope.launch {
             repository.deleteReport(report)
+        }
+    }
+
+    // PDF Export
+    fun exportAndSharePdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
+        try {
+            val file = com.example.util.PdfReportGenerator.generateShiftPdf(
+                context = context,
+                formState = _formState.value,
+                activeItems = activeItems
+            )
+            com.example.util.PdfReportGenerator.sharePdf(context, file)
+            saveCurrentReportToHistory(buildFormattedMessage(activeItems))
+        } catch (e: Exception) {
+            Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun exportAndViewPdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
+        try {
+            val file = com.example.util.PdfReportGenerator.generateShiftPdf(
+                context = context,
+                formState = _formState.value,
+                activeItems = activeItems
+            )
+            com.example.util.PdfReportGenerator.viewPdf(context, file)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Erro ao abrir PDF: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -347,45 +580,19 @@ class BpsViewModel(
         }
     }
 
-    fun exportAndSharePdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
-        try {
-            val file = com.example.util.PdfReportGenerator.generateShiftPdf(
-                context = context,
-                formState = _formState.value,
-                activeItems = activeItems
-            )
-            com.example.util.PdfReportGenerator.sharePdf(context, file)
-            saveCurrentReportToHistory(buildFormattedMessage(activeItems))
-        } catch (e: Exception) {
-            Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun exportAndViewPdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
-        try {
-            val file = com.example.util.PdfReportGenerator.generateShiftPdf(
-                context = context,
-                formState = _formState.value,
-                activeItems = activeItems
-            )
-            com.example.util.PdfReportGenerator.viewPdf(context, file)
-        } catch (e: Exception) {
-            Toast.makeText(context, "Erro ao abrir PDF: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
 }
 
 class BpsViewModelFactory(
-    private val repository: BpsRepository
+    private val repository: BpsRepository,
+    private val networkMonitor: NetworkMonitor
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(BpsViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return BpsViewModel(repository) as T
+            return BpsViewModel(repository, networkMonitor) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

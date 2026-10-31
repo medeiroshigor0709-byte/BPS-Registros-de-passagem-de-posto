@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.BpsHeader
 import com.example.ui.theme.BpsDarkSurface
 import com.example.ui.theme.BpsGold
@@ -57,10 +58,16 @@ fun MainAppScreen(
         selectedTab = BpsNavTab.SHIFT_HANDOVER
     }
 
+    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+    val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            BpsHeader(subtitle = selectedTab.headerSubtitle)
+            BpsHeader(
+                subtitle = selectedTab.headerSubtitle,
+                isOnline = isOnline
+            )
         },
         bottomBar = {
             NavigationBar(
@@ -74,11 +81,30 @@ fun MainAppScreen(
                         selected = isSelected,
                         onClick = { selectedTab = tab },
                         icon = {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.title,
-                                tint = if (isSelected) BpsGold else Color(0xFF94A3B8)
-                            )
+                            if (tab == BpsNavTab.HISTORY && pendingCount > 0) {
+                                androidx.compose.material3.BadgedBox(
+                                    badge = {
+                                        androidx.compose.material3.Badge(
+                                            containerColor = Color(0xFFEF4444),
+                                            contentColor = Color.White
+                                        ) {
+                                            Text(pendingCount.toString())
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tab.title,
+                                        tint = if (isSelected) BpsGold else Color(0xFF94A3B8)
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.title,
+                                    tint = if (isSelected) BpsGold else Color(0xFF94A3B8)
+                                )
+                            }
                         },
                         label = {
                             Text(

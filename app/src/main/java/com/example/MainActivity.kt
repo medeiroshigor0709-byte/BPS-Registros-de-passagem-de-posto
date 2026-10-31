@@ -20,7 +20,8 @@ class MainActivity : ComponentActivity() {
 
     private val database by lazy { AppDatabase.getDatabase(applicationContext) }
     private val repository by lazy { BpsRepository(database) }
-    private val viewModel by viewModels<BpsViewModel> { BpsViewModelFactory(repository) }
+    private val networkMonitor by lazy { com.example.util.NetworkMonitor(applicationContext) }
+    private val viewModel by viewModels<BpsViewModel> { BpsViewModelFactory(repository, networkMonitor) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

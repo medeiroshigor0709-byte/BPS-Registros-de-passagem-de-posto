@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ShiftDraft
 import com.example.data.model.ShiftReport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,15 +17,17 @@ import kotlinx.coroutines.launch
     entities = [
         Employee::class,
         ChecklistTemplateItem::class,
-        ShiftReport::class
+        ShiftReport::class,
+        ShiftDraft::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
     abstract fun checklistTemplateDao(): ChecklistTemplateDao
     abstract fun shiftReportDao(): ShiftReportDao
+    abstract fun shiftDraftDao(): ShiftDraftDao
 
     companion object {
         @Volatile

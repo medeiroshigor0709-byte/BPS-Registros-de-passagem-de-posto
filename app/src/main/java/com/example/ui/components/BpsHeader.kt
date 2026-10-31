@@ -44,7 +44,8 @@ import com.example.ui.theme.BpsSilver
 @Composable
 fun BpsHeader(
     modifier: Modifier = Modifier,
-    subtitle: String = "Gestão de Portaria & Passagem de Posto"
+    subtitle: String = "Gestão de Portaria & Passagem de Posto",
+    isOnline: Boolean = true
 ) {
     Card(
         modifier = modifier
@@ -127,27 +128,29 @@ fun BpsHeader(
                     )
                 }
 
-                // Security Shield Badge
+                // Connectivity & Security Badge
                 Surface(
                     shape = CircleShape,
-                    color = Color(0xFF1E293B),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
+                    color = if (isOnline) Color(0xFF1E293B) else Color(0xFF3F1317),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isOnline) BpsGold.copy(alpha = 0.5f) else Color(0xFFEF4444)
+                    )
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Shield,
-                            contentDescription = "Segurança",
-                            tint = BpsGold,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isOnline) Color(0xFF22C55E) else Color(0xFFEF4444),
+                            modifier = Modifier.size(8.dp)
+                        ) {}
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "24H",
-                            color = BpsGoldLight,
-                            fontSize = 11.sp,
+                            text = if (isOnline) "ONLINE" else "OFFLINE",
+                            color = if (isOnline) BpsGoldLight else Color(0xFFFCA5A5),
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }

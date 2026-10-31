@@ -3,9 +3,11 @@ package com.example.data.repository
 import com.example.data.local.AppDatabase
 import com.example.data.local.ChecklistTemplateDao
 import com.example.data.local.EmployeeDao
+import com.example.data.local.ShiftDraftDao
 import com.example.data.local.ShiftReportDao
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ShiftDraft
 import com.example.data.model.ShiftReport
 import kotlinx.coroutines.flow.Flow
 
@@ -13,7 +15,8 @@ class BpsRepository(
     private val database: AppDatabase,
     private val employeeDao: EmployeeDao = database.employeeDao(),
     private val templateDao: ChecklistTemplateDao = database.checklistTemplateDao(),
-    private val reportDao: ShiftReportDao = database.shiftReportDao()
+    private val reportDao: ShiftReportDao = database.shiftReportDao(),
+    private val draftDao: ShiftDraftDao = database.shiftDraftDao()
 ) {
     // Employees
     val allEmployees: Flow<List<Employee>> = employeeDao.getAllEmployees()
@@ -66,14 +69,25 @@ class BpsRepository(
         templateDao.insertAll(defaultItems)
     }
 
-    // Reports History
+    // Reports History & Offline Sync Layer
     val allReports: Flow<List<ShiftReport>> = reportDao.getAllReports()
+    val pendingReports: Flow<List<ShiftReport>> = reportDao.getPendingSyncReports()
+    val pendingCount: Flow<Int> = reportDao.getPendingCount()
 
     fun searchReports(query: String): Flow<List<ShiftReport>> = reportDao.searchReports(query)
 
     suspend fun saveReport(report: ShiftReport): Long = reportDao.insertReport(report)
 
+    suspend fun markReportAsSynced(id: Long) = reportDao.markAsSynced(id, System.currentTimeMillis())
+
+    suspend fun markAllAsSynced() = reportDao.markAllAsSynced(System.currentTimeMillis())
+
     suspend fun deleteReport(report: ShiftReport) = reportDao.deleteReport(report)
+
+    // Draft autosave
+    suspend fun saveDraft(draft: ShiftDraft) = draftDao.saveDraft(draft)
+    suspend fun getDraftDirect(): ShiftDraft? = draftDao.getDraftDirect()
+    suspend fun clearDraft() = draftDao.clearDraft()
 
     suspend fun ensureDefaultDataSeeded() {
         if (templateDao.getTemplateCount() == 0) {

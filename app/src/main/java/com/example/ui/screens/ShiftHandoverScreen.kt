@@ -85,6 +85,7 @@ import com.example.ui.theme.StatusOk
 import com.example.ui.theme.StatusWarning
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.viewmodel.BpsViewModel
+import com.example.ui.viewmodel.MessageFormatStyle
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -96,6 +97,10 @@ fun ShiftHandoverScreen(
     val formState by viewModel.formState.collectAsStateWithLifecycle()
     val employees by viewModel.employees.collectAsStateWithLifecycle()
     val templateItems by viewModel.templateItems.collectAsStateWithLifecycle()
+
+    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+    val pendingReports by viewModel.pendingReports.collectAsStateWithLifecycle()
+    val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
 
     val activeItems = remember(templateItems) {
         templateItems.filter { it.isEnabled }.sortedBy { it.orderIndex }
@@ -128,6 +133,93 @@ fun ShiftHandoverScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        // Offline alert banner if offline
+        if (!isOnline) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().testTag("offline_banner"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF3F171B)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFEF4444),
+                            modifier = Modifier.size(10.dp)
+                        ) {}
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Modo Offline Ativo (Sem Conexão)",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Preencha normalmente. O checklist será salvo localmente no Room e poderá ser enviado ao WhatsApp quando a conexão retornar.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFFCA5A5)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pending sync queue banner if there are offline saved reports
+        if (pendingCount > 0) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().testTag("pending_sync_banner"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2638)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Text(text = "⏳", fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "$pendingCount Checklist(s) Aguardando Envio",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = BpsGoldLight
+                                    )
+                                    Text(
+                                        text = "Salvos no banco Room sem internet",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    pendingReports.firstOrNull()?.let { report ->
+                                        viewModel.syncPendingReportToWhatsApp(report, context)
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("Enviar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 1. Post & Greeting Card
@@ -425,6 +517,49 @@ fun ShiftHandoverScreen(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Formato da Mensagem:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFCBD5E1)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        MessageFormatStyle.values().forEach { style ->
+                            val isSelected = formState.formatStyle == style
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.updateMessageFormatStyle(style) },
+                                label = {
+                                    Text(
+                                        text = style.label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BpsGold,
+                                    selectedLabelColor = Color(0xFF0F172A),
+                                    containerColor = Color(0xFF1E293B),
+                                    labelColor = Color(0xFFCBD5E1)
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    borderColor = if (isSelected) BpsGold else Color(0xFF334155),
+                                    selectedBorderColor = BpsGold,
+                                    enabled = true,
+                                    selected = isSelected
+                                ),
+                                modifier = Modifier.testTag("chip_format_${style.name.lowercase()}")
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Simulated WhatsApp speech bubble
@@ -535,6 +670,36 @@ fun ShiftHandoverScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Salvar Registro", fontWeight = FontWeight.SemiBold)
                     }
+                }
+
+                // Save Offline in Room Button (for later sync/send)
+                Button(
+                    onClick = {
+                        viewModel.saveReportOffline(formattedMessage, context)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("save_offline_room_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1E293B),
+                        contentColor = BpsGoldLight
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.6f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = BpsGold
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Salvar Offline no Room (Enviar Depois)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 // PDF Export & Share Card (E-mail, WhatsApp as PDF document, Local Save)
