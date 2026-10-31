@@ -2,6 +2,8 @@
 
 # 🛡️ BPS — Registros de Passagem de Posto
 
+https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/blob/5d65891ccc365585daa341230afba41560a2c3ab/file_0000000045b0820eab716d9d7b843631.png
+
 ### Gestão operacional, comunicação e monitoramento de equipamentos de portaria
 
 Organize a troca de turnos, padronize registros e facilite a comunicação entre os profissionais de portaria.
