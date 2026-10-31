@@ -2,6 +2,7 @@
 
 # 🛡️ BPS — Registros de Passagem de Posto
 
+!{image_alt}(https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/blob/e9018a6412b4dac8352b7c5eb129cc3dca3385b5/a_clean_modern_promotional_app_showcase_poster_re.png)
 
 ### Gestão operacional, comunicação e monitoramento de equipamentos de portaria
 
