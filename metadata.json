@@ -1,0 +1,6 @@
+{
+  "name": "BPS Facilities",
+  "description": "Registro de passagem de posto de portaria com checklist personalizável, cadastro de funcionários e envio formatado direto para WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
