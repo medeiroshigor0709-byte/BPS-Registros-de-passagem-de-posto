@@ -2,11 +2,7 @@
 
 # 🛡️ BPS — Registros de Passagem de Posto
 
-<div align="center">
-  <img src="BPS-banner.png" alt="BPS Facilities - Registros de Passagem de Posto" width="100%">
-</div>
 
-<br>
 
 ### Gestão operacional, comunicação e monitoramento de equipamentos de portaria
 
