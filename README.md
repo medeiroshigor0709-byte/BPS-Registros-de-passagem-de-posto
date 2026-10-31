@@ -6,7 +6,7 @@
 
 Organize a troca de turnos, padronize registros e facilite a comunicação entre os profissionais de portaria.
 
-[📲 **BAIXAR APLICATIVO ANDROID (APK)**](https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/releases/latest/download/BPS_Facilities.apk)
+[📲 **BAIXAR APLICATIVO ANDROID (APK)**]([https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/releases/latest/download/BPS_Facilities.apk](https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/blob/8025519a6c2862109c9bab4cfec2b96075d065b5/BPS_Facilities.apk))
 
 </div>
 
@@ -39,7 +39,7 @@ Digitalizar e simplificar o processo de passagem de posto, centralizando informa
 
 ### BPS Facilities para Android
 
-**[⬇️ Clique aqui para baixar o APK](https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/releases/latest/download/BPS_Facilities.apk)**
+**[⬇️ Clique aqui para baixar o APK]([https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/releases/latest/download/BPS_Facilities.apk](https://github.com/medeiroshigor0709-byte/BPS-Registros-de-passagem-de-posto/blob/8025519a6c2862109c9bab4cfec2b96075d065b5/BPS_Facilities.apk))**
 
 </div>
 
