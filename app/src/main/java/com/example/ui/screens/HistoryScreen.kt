@@ -26,16 +26,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
@@ -44,8 +44,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -100,8 +100,8 @@ fun HistoryScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val reports by viewModel.reportsHistory.collectAsStateWithLifecycle()
+    val pendingConfirmReportId by viewModel.pendingShareConfirmationReportId.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
 
     var reportToView by remember { mutableStateOf<ShiftReport?>(null) }
@@ -222,51 +222,14 @@ fun HistoryScreen(
                 items(filteredReports, key = { it.id }) { report ->
                     HistoryReportCard(
                         report = report,
-                        onSendWhatsApp = {
-                            viewModel.sendToWhatsApp(context, report.reportContent, saveHistory = false)
+                        onSendPdf = {
+                            viewModel.shareSavedReportPdf(report, context)
                         },
-                        onCopy = {
-                            viewModel.copyToClipboard(context, report.reportContent)
-                        },
+                        onConfirmSent = if (report.syncStatus == "AGUARDANDO CONFIRMAÇÃO") {
+                            { viewModel.confirmPdfSent(report.id, context) }
+                        } else null,
                         onViewDetails = {
                             reportToView = report
-                        },
-                        onExportPdf = {
-                            scope.launch {
-                                val snapshotEntries = ChecklistSnapshotHelper.fromSnapshotJson(report.checklistSnapshotJson)
-                                val (historyItems, historyStates) = if (snapshotEntries != null) {
-                                    ChecklistSnapshotHelper.toItemsAndStates(snapshotEntries)
-                                } else {
-                                    viewModel.templateItems.value.filter { it.isEnabled } to emptyMap()
-                                }
-                                val camSnapshot = viewModel.getCameraStateForReport(report)
-                                val attachments = viewModel.getAttachmentsForReportDirect(report.id)
-                                val tempState = ShiftFormUiState(
-                                    greeting = report.greeting,
-                                    postName = report.postName,
-                                    receivingEmployee = report.receivingEmployee,
-                                    departingEmployee = report.departingEmployee,
-                                    itemStates = historyStates,
-                                    cameraMonitoring = camSnapshot,
-                                    camerasWorkingCount = report.cameraWorkingCount,
-                                    monitor1Details = report.monitor1Details,
-                                    monitor2Details = report.monitor2Details,
-                                    generalNotes = report.generalNotes,
-                                    observationAttachments = attachments
-                                )
-                                val validationError = PdfReportGenerator.validateForPdf(tempState)
-                                if (validationError != null) {
-                                    android.widget.Toast.makeText(context, validationError, android.widget.Toast.LENGTH_LONG).show()
-                                    return@launch
-                                }
-                                val file = PdfReportGenerator.generateShiftPdf(
-                                    context = context,
-                                    formState = tempState,
-                                    activeItems = historyItems,
-                                    reportTimestamp = report.timestamp
-                                )
-                                PdfReportGenerator.sharePdf(context, file)
-                            }
                         },
                         onDelete = {
                             reportToDelete = report
@@ -318,6 +281,41 @@ fun HistoryScreen(
             }
         )
     }
+    // Confirm PDF Sent Dialog
+    pendingConfirmReportId?.let { reportId ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissShareConfirmation() },
+            modifier = Modifier.testTag("confirm_pdf_sent_dialog"),
+            title = {
+                Text(
+                    text = "Confirmar envio do PDF?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "O compartilhamento do arquivo PDF foi aberto. Confirme apenas após concluir o envio do PDF pelo WhatsApp para marcar este registro como enviado."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmPdfSent(reportId, context) },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                    modifier = Modifier.testTag("confirm_pdf_sent_btn")
+                ) {
+                    Text("Confirmar Envio", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissShareConfirmation() },
+                    modifier = Modifier.testTag("dismiss_confirm_pdf_btn")
+                ) {
+                    Text("Ainda não enviado")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -328,7 +326,7 @@ private fun ShiftReportDetailDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val dateFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale("pt", "BR"))
+    val dateFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale.forLanguageTag("pt-BR"))
     val formattedDate = dateFormat.format(Date(report.timestamp))
 
     var cameraSnapshot by remember(report.id) {
@@ -537,7 +535,7 @@ private fun ShiftReportDetailDialog(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = Color(0xFF283548))
+                            HorizontalDivider(color = Color(0xFF283548))
                             Spacer(modifier = Modifier.height(10.dp))
 
                             ObservationAttachmentsSection(
@@ -556,14 +554,14 @@ private fun ShiftReportDetailDialog(
                         }
                     }
 
-                    // Formatted WhatsApp Message
+                    // Report Summary
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = Color(0xFF1E293B)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(
-                                text = "Texto formatado do WhatsApp:",
+                                text = "Resumo do Registro:",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF94A3B8)
@@ -579,7 +577,7 @@ private fun ShiftReportDetailDialog(
                     }
                 }
 
-                // Footer actions
+                // Footer actions (exclusively PDF)
                 Surface(color = Color(0xFF070B14)) {
                     Row(
                         modifier = Modifier
@@ -587,56 +585,28 @@ private fun ShiftReportDetailDialog(
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                val snapshotEntries = ChecklistSnapshotHelper.fromSnapshotJson(report.checklistSnapshotJson)
-                                val (historyItems, historyStates) = if (snapshotEntries != null) {
-                                    ChecklistSnapshotHelper.toItemsAndStates(snapshotEntries)
-                                } else {
-                                    viewModel.templateItems.value.filter { it.isEnabled } to emptyMap()
-                                }
-                                val tempState = ShiftFormUiState(
-                                    greeting = report.greeting,
-                                    postName = report.postName,
-                                    receivingEmployee = report.receivingEmployee,
-                                    departingEmployee = report.departingEmployee,
-                                    itemStates = historyStates,
-                                    cameraMonitoring = cameraSnapshot,
-                                    camerasWorkingCount = report.cameraWorkingCount,
-                                    monitor1Details = report.monitor1Details,
-                                    monitor2Details = report.monitor2Details,
-                                    generalNotes = editableNotes,
-                                    observationAttachments = attachments
+                        if (report.isPendingSync) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.confirmPdfSent(report.id, context)
+                                },
+                                modifier = Modifier.weight(0.85f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = BpsGold
                                 )
-                                val validationError = PdfReportGenerator.validateForPdf(tempState)
-                                if (validationError != null) {
-                                    android.widget.Toast.makeText(context, validationError, android.widget.Toast.LENGTH_LONG).show()
-                                    return@OutlinedButton
-                                }
-                                val file = PdfReportGenerator.generateShiftPdf(
-                                    context = context,
-                                    formState = tempState,
-                                    activeItems = historyItems,
-                                    reportTimestamp = report.timestamp
-                                )
-                                PdfReportGenerator.sharePdf(context, file)
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PictureAsPdf,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = BpsGold
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Exportar PDF", fontSize = 12.sp, color = BpsGoldLight)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Confirmar Envio", fontSize = 12.sp, color = BpsGoldLight)
+                            }
                         }
 
                         Button(
                             onClick = {
-                                viewModel.sendToWhatsApp(context, report.reportContent, saveHistory = false)
+                                viewModel.shareSavedReportPdf(report.copy(generalNotes = editableNotes), context)
                                 onDismiss()
                             },
                             modifier = Modifier.weight(1f),
@@ -644,13 +614,13 @@ private fun ShiftReportDetailDialog(
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Send,
+                                imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = Color.White
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reenviar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Enviar PDF pelo WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -709,14 +679,13 @@ private fun HistoricalMonitorGrid(
 @Composable
 fun HistoryReportCard(
     report: ShiftReport,
-    onSendWhatsApp: () -> Unit,
-    onCopy: () -> Unit,
+    onSendPdf: () -> Unit,
+    onConfirmSent: (() -> Unit)?,
     onViewDetails: () -> Unit,
-    onExportPdf: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dateFormat = SimpleDateFormat("dd/MM/yyyy - HH:mm", Locale("pt", "BR"))
+    val dateFormat = SimpleDateFormat("dd/MM/yyyy - HH:mm", Locale.forLanguageTag("pt-BR"))
     val formattedDate = dateFormat.format(Date(report.timestamp))
     val camSnapshot = remember(report.cameraStatesJson, report.monitor1Details, report.monitor2Details) {
         CameraMonitoringState.fromSnapshotJson(report.cameraStatesJson)
@@ -851,10 +820,10 @@ fun HistoryReportCard(
             )
 
             Spacer(modifier = Modifier.height(10.dp))
-            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Action buttons row
+            // Action buttons row (exclusively PDF)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -862,24 +831,28 @@ fun HistoryReportCard(
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
-                        onClick = onSendWhatsApp,
+                        onClick = onSendPdf,
                         colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("history_share_pdf_btn_${report.id}")
                     ) {
-                        Icon(imageVector = Icons.Default.Send, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                        Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Enviar PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
 
-                    OutlinedButton(
-                        onClick = onCopy,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Copiar", fontSize = 12.sp)
+                    if (onConfirmSent != null) {
+                        OutlinedButton(
+                            onClick = onConfirmSent,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("history_confirm_sent_btn_${report.id}")
+                        ) {
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = BpsGold)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Confirmar", fontSize = 12.sp, color = BpsGoldLight)
+                        }
                     }
 
                     OutlinedButton(
@@ -891,16 +864,6 @@ fun HistoryReportCard(
                         Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Ver", fontSize = 12.sp)
-                    }
-
-                    OutlinedButton(
-                        onClick = onExportPdf,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(14.dp), tint = BpsGold)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("PDF", fontSize = 12.sp, color = BpsGoldLight)
                     }
                 }
 

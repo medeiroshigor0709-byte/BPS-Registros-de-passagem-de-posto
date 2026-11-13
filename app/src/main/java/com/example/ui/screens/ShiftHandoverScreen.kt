@@ -25,29 +25,26 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,10 +53,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import java.io.File
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +68,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,13 +80,11 @@ import com.example.ui.components.PdfViewerDialog
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
 import com.example.ui.theme.BpsGoldLight
-import com.example.ui.theme.BpsSilver
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusOk
 import com.example.ui.theme.StatusWarning
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.viewmodel.BpsViewModel
-import com.example.ui.viewmodel.MessageFormatStyle
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -108,18 +102,11 @@ fun ShiftHandoverScreen(
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingReports by viewModel.pendingReports.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+    val pendingConfirmReportId by viewModel.pendingShareConfirmationReportId.collectAsStateWithLifecycle()
     var generatedPdfPreview by remember { mutableStateOf<File?>(null) }
 
     val activeItems = remember(templateItems) {
         templateItems.filter { it.isEnabled }.sortedBy { it.orderIndex }
-    }
-
-    val formattedMessage = remember(formState, activeItems) {
-        viewModel.buildFormattedMessage(activeItems)
-    }
-
-    val missingValidation by remember(formState, activeItems) {
-        derivedStateOf { viewModel.validateRequiredItems(activeItems) }
     }
 
     LazyColumn(
@@ -138,7 +125,7 @@ fun ShiftHandoverScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "Preencha o checklist para gerar a mensagem formatada para o WhatsApp da empresa",
+                text = "Preencha o checklist para gerar e enviar o relatório em PDF pelo WhatsApp",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -171,7 +158,7 @@ fun ShiftHandoverScreen(
                                 fontSize = 13.sp
                             )
                             Text(
-                                text = "Preencha normalmente. O checklist será salvo localmente no Room e poderá ser enviado ao WhatsApp quando a conexão retornar.",
+                                text = "Preencha normalmente. O checklist será salvo localmente no Room e o PDF poderá ser enviado pelo WhatsApp quando a conexão retornar.",
                                 fontSize = 11.sp,
                                 color = Color(0xFFFCA5A5)
                             )
@@ -213,17 +200,29 @@ fun ShiftHandoverScreen(
                                     )
                                 }
                             }
-                            Button(
-                                onClick = {
-                                    pendingReports.firstOrNull()?.let { report ->
-                                        viewModel.syncPendingReportToWhatsApp(report, context)
+                            val firstPending = pendingReports.firstOrNull()
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (firstPending?.syncStatus == "AGUARDANDO CONFIRMAÇÃO") {
+                                    OutlinedButton(
+                                        onClick = { viewModel.confirmPdfSent(firstPending.id, context) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("Confirmar", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight)
                                     }
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text("Enviar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = {
+                                        firstPending?.let { report ->
+                                            viewModel.shareSavedReportPdf(report, context)
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Enviar PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -401,7 +400,7 @@ fun ShiftHandoverScreen(
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
-                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(14.dp))
 
                     // Porteiro que RECEBE / ASSUME
@@ -594,7 +593,7 @@ fun ShiftHandoverScreen(
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
-                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(12.dp))
 
                     ObservationAttachmentsSection(
@@ -616,240 +615,13 @@ fun ShiftHandoverScreen(
             }
         }
 
-        // 5. WhatsApp Message Live Preview
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("whatsapp_preview_card"),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF0C1322)
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, WhatsAppGreen.copy(alpha = 0.6f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = CircleShape,
-                                color = WhatsAppGreen,
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Send,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Pré-visualização do WhatsApp",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                        }
-                        Text(
-                            text = "${formattedMessage.length} caracteres",
-                            fontSize = 11.sp,
-                            color = Color(0xFF94A3B8)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "Formato da Mensagem:",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFCBD5E1)
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        MessageFormatStyle.values().forEach { style ->
-                            val isSelected = formState.formatStyle == style
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { viewModel.updateMessageFormatStyle(style) },
-                                label = {
-                                    Text(
-                                        text = style.label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = BpsGold,
-                                    selectedLabelColor = Color(0xFF0F172A),
-                                    containerColor = Color(0xFF1E293B),
-                                    labelColor = Color(0xFFCBD5E1)
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    borderColor = if (isSelected) BpsGold else Color(0xFF334155),
-                                    selectedBorderColor = BpsGold,
-                                    enabled = true,
-                                    selected = isSelected
-                                ),
-                                modifier = Modifier.testTag("chip_format_${style.name.lowercase()}")
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Simulated WhatsApp speech bubble
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF1E293B), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFF334155), RoundedCornerShape(12.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            text = formattedMessage,
-                            color = Color(0xFFE2E8F0),
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                            fontFamily = FontFamily.Default
-                        )
-                    }
-                }
-            }
-        }
-
-        // 6. Action Buttons
+        // 5. Exclusive PDF Export & WhatsApp PDF Send + Local Save Actions
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Send to WhatsApp Button (Primary)
-                Button(
-                    onClick = {
-                        viewModel.sendToWhatsApp(context, formattedMessage)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("send_whatsapp_button"),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = WhatsAppGreen,
-                        contentColor = Color.White
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Enviar no WhatsApp da Empresa",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Copy message button
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.copyToClipboard(context, formattedMessage)
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .testTag("copy_text_button"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = BpsSilver
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Copiar Texto", fontWeight = FontWeight.SemiBold)
-                    }
-
-                    // Save report only
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.saveCurrentReportToHistory(formattedMessage, activeItems)
-                            android.widget.Toast.makeText(context, "Registro salvo no histórico!", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .testTag("save_report_button"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = BpsGoldLight
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Save,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = BpsGold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Salvar Registro", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                // Save Offline in Room Button (for later sync/send)
-                Button(
-                    onClick = {
-                        viewModel.saveReportOffline(formattedMessage, context, activeItems)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .testTag("save_offline_room_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1E293B),
-                        contentColor = BpsGoldLight
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.6f))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Save,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = BpsGold
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Salvar Offline no Room (Enviar Depois)",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                // PDF Export & Share Card (E-mail, WhatsApp as PDF document, Local Save)
+                // Exclusive PDF Export & Share Card (WhatsApp PDF document)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -858,7 +630,7 @@ fun ShiftHandoverScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = Color(0xFF131C31)
                     ),
-                    border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.5f))
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, BpsGold.copy(alpha = 0.65f))
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -882,13 +654,13 @@ fun ShiftHandoverScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Exportar Relatório em PDF",
+                                    text = "Relatório Oficial em PDF",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "Assinatura nominal automática • Salvar ou enviar",
+                                    text = "Envio exclusivo em PDF pelo WhatsApp • Assinatura nominal automática",
                                     fontSize = 11.sp,
                                     color = Color(0xFFCBD5E1)
                                 )
@@ -968,34 +740,34 @@ fun ShiftHandoverScreen(
                             Spacer(modifier = Modifier.height(10.dp))
                         }
 
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
                                 onClick = {
                                     viewModel.exportAndSharePdf(context, activeItems)
                                 },
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(46.dp)
+                                    .fillMaxWidth()
+                                    .height(50.dp)
                                     .testTag("share_pdf_button"),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = BpsGold,
-                                    contentColor = Color(0xFF1E1400)
+                                    containerColor = WhatsAppGreen,
+                                    contentColor = Color.White
                                 )
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Share,
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Enviar PDF / E-mail",
+                                    text = "Enviar PDF pelo WhatsApp",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 15.sp
                                 )
                             }
 
@@ -1004,22 +776,82 @@ fun ShiftHandoverScreen(
                                     generatedPdfPreview = viewModel.generateShiftPdfFile(context, activeItems)
                                 },
                                 modifier = Modifier
-                                    .weight(0.7f)
-                                    .height(46.dp)
+                                    .fillMaxWidth()
+                                    .height(44.dp)
                                     .testTag("view_pdf_button"),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = Color.White
+                                    contentColor = BpsGoldLight
                                 ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
                             ) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = BpsGold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Visualizar",
+                                    text = "Visualizar PDF antes de enviar",
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp
                                 )
                             }
                         }
+                    }
+                }
+
+                // Local save actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.saveCurrentReportToHistory(activeItems)
+                            android.widget.Toast.makeText(context, "Registro salvo no histórico!", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("save_report_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = BpsGoldLight
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = BpsGold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Salvar Registro", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.saveReportOffline(context, activeItems)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("save_offline_room_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1E293B),
+                            contentColor = BpsGoldLight
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = "Salvar Offline",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -1032,7 +864,46 @@ fun ShiftHandoverScreen(
         PdfViewerDialog(
             pdfFile = pdfFile,
             title = "Relatório de Passagem - BPS Facilities",
-            onDismiss = { generatedPdfPreview = null }
+            onDismiss = { generatedPdfPreview = null },
+            onShareClick = {
+                generatedPdfPreview = null
+                viewModel.exportAndSharePdf(context, activeItems)
+            }
+        )
+    }
+
+    pendingConfirmReportId?.let { reportId ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissShareConfirmation() },
+            modifier = Modifier.testTag("confirm_pdf_sent_dialog"),
+            title = {
+                Text(
+                    text = "Confirmar envio do PDF?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "O compartilhamento do arquivo PDF foi aberto. Confirme apenas após concluir o envio do PDF pelo WhatsApp para marcar este registro como enviado."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmPdfSent(reportId, context) },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                    modifier = Modifier.testTag("confirm_pdf_sent_btn")
+                ) {
+                    Text("Confirmar Envio", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissShareConfirmation() },
+                    modifier = Modifier.testTag("dismiss_confirm_pdf_btn")
+                ) {
+                    Text("Ainda não enviado")
+                }
+            }
         )
     }
 }

@@ -1,5 +1,7 @@
 package com.example.util
 
+import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -123,7 +125,7 @@ object PdfReportGenerator {
 
         val departing = formState.departingEmployee.trim()
         val receiving = formState.receivingEmployee.trim()
-        val dateFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale("pt", "BR"))
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale.forLanguageTag("pt-BR"))
         val formattedDateTime = dateFormat.format(Date(reportTimestamp))
 
         // Operational rows (Câmeras stays integrated into the dedicated 32-camera CFTV section)
@@ -1007,31 +1009,53 @@ object PdfReportGenerator {
         return lines
     }
 
-    /**
-     * Shares the generated PDF file via standard Android share sheet (Email, WhatsApp as document, Drive, etc.)
-     */
-    fun sharePdf(context: Context, file: File, subject: String = "Relatório de Passagem de Posto - BPS Facilities") {
-        try {
-            val uri: Uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, subject)
-                putExtra(Intent.EXTRA_TEXT, "Segue em anexo o relatório em PDF da passagem de posto da BPS Facilities.")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    fun buildPdfShareIntent(
+        context: Context,
+        file: File,
+        subject: String = "Relatório de Passagem de Posto - BPS Facilities"
+    ): Intent {
+        require(file.exists() && file.length() > 0L) {
+            "Arquivo PDF inválido ou inexistente para compartilhamento."
+        }
+        val uri: Uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        return Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            clipData = ClipData.newRawUri(file.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (context !is Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+        }
+    }
 
-            val chooser = Intent.createChooser(shareIntent, "Salvar ou Enviar Relatório PDF:")
-            chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    /**
+     * Shares the generated PDF file exclusively via Android native share sheet (WhatsApp, Email, Drive, etc.)
+     * using ACTION_SEND + application/pdf + FileProvider temporary read permission.
+     */
+    fun sharePdf(
+        context: Context,
+        file: File,
+        subject: String = "Relatório de Passagem de Posto - BPS Facilities"
+    ): Boolean {
+        return try {
+            val shareIntent = buildPdfShareIntent(context, file, subject)
+            val chooser = Intent.createChooser(shareIntent, "Enviar PDF pelo WhatsApp ou outro aplicativo:").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
             context.startActivity(chooser)
+            true
         } catch (e: Exception) {
             Toast.makeText(context, "Erro ao compartilhar PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            false
         }
     }
 
@@ -1049,7 +1073,9 @@ object PdfReportGenerator {
             val viewIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/pdf")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             }
 
             context.startActivity(viewIntent)

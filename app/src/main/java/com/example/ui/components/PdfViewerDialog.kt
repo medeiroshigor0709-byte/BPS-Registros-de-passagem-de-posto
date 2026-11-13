@@ -29,8 +29,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -326,13 +326,13 @@ fun PdfViewerDialog(
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Share,
+                                imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = BpsGold
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Compartilhar", fontSize = 13.sp, color = Color.White)
+                            Text("Enviar PDF", fontSize = 13.sp, color = Color.White)
                         }
 
                         OutlinedButton(

@@ -119,14 +119,16 @@ jobs:
           echo "gradle_args=-PappVersionName=${VERSION_NAME} -PappVersionCode=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
           echo "Versão automática configurada: versionName=${VERSION_NAME}, versionCode=${VERSION_CODE} (Execução #${RUN_NUMBER})"
 
-      - name: Executar testes unitários e Robolectric
+      - name: Executar testes unitários e Robolectric (KSP + JVM)
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         shell: bash
+        env:
+          JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
         run: |
           if [ -x ./gradlew ]; then
-            ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+            ./gradlew :app:kspDebugKotlin :app:kspDebugUnitTestKotlin :app:testDebugUnitTest --no-daemon --stacktrace
           else
-            gradle :app:testDebugUnitTest --no-daemon --stacktrace
+            gradle :app:kspDebugKotlin :app:kspDebugUnitTestKotlin :app:testDebugUnitTest --no-daemon --stacktrace
           fi
 
       - name: Configurar assinatura Release (Secrets ou chave temporária de teste)
@@ -199,7 +201,7 @@ jobs:
           fi
 
           mkdir -p build-artifacts
-          cp "$APK_SOURCE" "build-artifacts/Passagem-de-Ponto.apk"
+          cp "$APK_SOURCE" "build-artifacts/BPS-FACILITIES-Release.apk"
 
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
           APKSIGNER_BIN=""
@@ -209,20 +211,20 @@ jobs:
 
           if [ -n "$APKSIGNER_BIN" ]; then
             echo "Verificando assinatura com $APKSIGNER_BIN..."
-            "$APKSIGNER_BIN" verify --print-certs "build-artifacts/Passagem-de-Ponto.apk"
+            "$APKSIGNER_BIN" verify --print-certs "build-artifacts/BPS-FACILITIES-Release.apk"
           fi
 
-          APK_SIZE="$(du -h build-artifacts/Passagem-de-Ponto.apk | cut -f1)"
-          APK_SHA256="$(sha256sum build-artifacts/Passagem-de-Ponto.apk | awk '{print $1}')"
+          APK_SIZE="$(du -h build-artifacts/BPS-FACILITIES-Release.apk | cut -f1)"
+          APK_SHA256="$(sha256sum build-artifacts/BPS-FACILITIES-Release.apk | awk '{print $1}')"
           echo "size=${APK_SIZE}" >> "$GITHUB_OUTPUT"
           echo "sha256=${APK_SHA256}" >> "$GITHUB_OUTPUT"
-          echo "APK gerado: build-artifacts/Passagem-de-Ponto.apk (${APK_SIZE}) | SHA-256: ${APK_SHA256}"
+          echo "APK gerado: build-artifacts/BPS-FACILITIES-Release.apk (${APK_SIZE}) | SHA-256: ${APK_SHA256}"
 
       - name: Publicar APK como Artifact do GitHub Actions
         uses: actions/upload-artifact@v4
         with:
           name: APK-Passagem-de-Ponto
-          path: build-artifacts/Passagem-de-Ponto.apk
+          path: build-artifacts/BPS-FACILITIES-Release.apk
           retention-days: 30
           if-no-files-found: error
 
@@ -245,7 +247,7 @@ jobs:
             echo "| **Execução Actions** | #${{ steps.version.outputs.run_number }} |"
             echo "| **Application ID** | \`com.aistudio.bpsfacilities.vjkr\` |"
             echo "| **Versão** | \`${{ steps.version.outputs.version_name }}\` (versionCode \`${{ steps.version.outputs.version_code }}\`) |"
-            echo "| **Arquivo** | \`Passagem-de-Ponto.apk\` |"
+            echo "| **Arquivo** | \`BPS-FACILITIES-Release.apk\` |"
             echo "| **Artifact** | \`APK-Passagem-de-Ponto\` (retenção de 30 dias) |"
             echo "| **Tamanho** | \`${{ steps.package_apk.outputs.size }}\` |"
             echo "| **SHA-256** | \`${{ steps.package_apk.outputs.sha256 }}\` |"
@@ -276,11 +278,11 @@ jobs:
       - name: Validar arquivo APK antes da publicação
         shell: bash
         run: |
-          if [ ! -f "release-assets/Passagem-de-Ponto.apk" ]; then
-            echo "::error::Artifact Passagem-de-Ponto.apk não encontrado para publicação da Release."
+          if [ ! -f "release-assets/BPS-FACILITIES-Release.apk" ]; then
+            echo "::error::Artifact BPS-FACILITIES-Release.apk não encontrado para publicação da Release."
             exit 1
           fi
-          ls -lh release-assets/Passagem-de-Ponto.apk
+          ls -lh release-assets/BPS-FACILITIES-Release.apk
 
       - name: Publicar nova Release sem sobrescrever versões anteriores
         shell: bash
@@ -299,13 +301,13 @@ jobs:
           {
             echo "## BPS Facilities — Passagem de Posto (${TAG_NAME})"
             echo ""
-            echo "- **Arquivo:** \`Passagem-de-Ponto.apk\`"
+            echo "- **Arquivo:** \`BPS-FACILITIES-Release.apk\`"
             echo "- **Application ID:** \`com.aistudio.bpsfacilities.vjkr\`"
             echo "- **SHA-256:** \`${APK_SHA256}\`"
             echo "- **Modo de assinatura:** \`${SIGNING_MODE}\`"
           } > "$NOTES_FILE"
 
-          gh release create "$TAG_NAME" "release-assets/Passagem-de-Ponto.apk" \
+          gh release create "$TAG_NAME" "release-assets/BPS-FACILITIES-Release.apk" \
             --title "BPS Facilities ${TAG_NAME}" \
             --notes-file "$NOTES_FILE" \
             --verify-tag

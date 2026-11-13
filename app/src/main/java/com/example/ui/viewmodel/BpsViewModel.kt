@@ -3,7 +3,6 @@ package com.example.ui.viewmodel
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
@@ -44,12 +43,6 @@ data class ItemCheckState(
     val photoPath: String? = null
 )
 
-enum class MessageFormatStyle(val label: String, val shortDesc: String) {
-    TOPICS("Em Tópicos (•)", "Itens em lista com marcadores"),
-    LINES("Linhas Simples", "Um item por linha"),
-    INLINE("Linha Contínua", "Texto corrido original")
-}
-
 data class ShiftFormUiState(
     val greeting: String = "Boa Noite",
     val postName: String = "*PORTARIA*",
@@ -62,8 +55,7 @@ data class ShiftFormUiState(
     val monitor2Details: String = CameraMonitoringState.allWorking().toMonitorDetailsText(2),
     val generalNotes: String = "",
     val observationAttachments: List<ShiftAttachment> = emptyList(),
-    val isCamerasActive: Boolean = true,
-    val formatStyle: MessageFormatStyle = MessageFormatStyle.TOPICS
+    val isCamerasActive: Boolean = true
 )
 
 data class ImageToPdfUiState(
@@ -115,6 +107,9 @@ class BpsViewModel(
 
     private val _pdfValidationError = MutableStateFlow<String?>(null)
     val pdfValidationError: StateFlow<String?> = _pdfValidationError.asStateFlow()
+
+    private val _pendingShareConfirmationReportId = MutableStateFlow<Long?>(null)
+    val pendingShareConfirmationReportId: StateFlow<Long?> = _pendingShareConfirmationReportId.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -611,125 +606,33 @@ class BpsViewModel(
         }
     }
 
-    fun updateMessageFormatStyle(style: MessageFormatStyle) {
-        _formState.update { it.copy(formatStyle = style) }
-    }
-
-    fun buildFormattedMessage(activeItems: List<ChecklistTemplateItem>): String {
+    fun buildReportSummaryText(activeItems: List<ChecklistTemplateItem>): String {
         val state = _formState.value
-        val sb = StringBuilder()
-        val recipient = if (state.receivingEmployee.isNotBlank()) state.receivingEmployee else "Porteiro"
+        val departing = state.departingEmployee.trim().ifBlank { "Não informado" }
+        val receiving = state.receivingEmployee.trim().ifBlank { "Não informado" }
+        val post = state.postName.replace("*", "").trim().ifBlank { "PORTARIA" }
+        val enabledItems = activeItems.filter { it.isEnabled && !it.isCamerasItem }
+        val irregularCount = enabledItems.count { item ->
+            val st = state.itemStates[item.id]?.status ?: "OK"
+            st == "ATENCAO" || st == "DEFEITO"
+        }
+        val camWorking = state.cameraMonitoring.totalWorking
+        val camTotal = state.cameraMonitoring.totalCameras
+        val camOffline = state.cameraMonitoring.totalOffline
+        val totalPhotos = state.itemStates.values.count { it.photoPath != null } +
+            state.observationAttachments.count { it.type == AttachmentType.PHOTO }
+        val totalPdfs = state.observationAttachments.count { it.type == AttachmentType.PDF }
 
-        when (state.formatStyle) {
-            MessageFormatStyle.TOPICS -> {
-                sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}\n\n")
-                sb.append("${state.postName}\n")
-
-                for (item in activeItems) {
-                    if (!item.isEnabled) continue
-
-                    if (item.isCamerasItem) {
-                        val camWorking = if (state.camerasWorkingCount.isNotBlank()) state.camerasWorkingCount else "OK"
-                        sb.append("• ${item.emoji} ${item.title}: ${camWorking}\n")
-                        if (state.monitor1Details.isNotBlank()) {
-                            sb.append("   ↳ *Monitor* ${state.monitor1Details}\n")
-                        }
-                        if (state.monitor2Details.isNotBlank()) {
-                            sb.append("   ↳ *Monitor* ${state.monitor2Details}\n")
-                        }
-                    } else {
-                        val check = state.itemStates[item.id] ?: ItemCheckState("OK")
-                        val statusText = when (check.status) {
-                            "OK" -> "*OK*"
-                            "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
-                            "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
-                            "NAO_POSSUI" -> "*N/A*"
-                            else -> "*${check.status}*"
-                        }
-                        val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
-                        sb.append("• ${item.emoji} ${item.title}: $statusText$photoBadge\n")
-                    }
-                }
+        return buildString {
+            append("Relatório PDF • Posto: $post | Entrega: $departing → Assume: $receiving\n")
+            append("Checklist: ${enabledItems.size} itens ($irregularCount com atenção/defeito) • CFTV: $camWorking/$camTotal OK ($camOffline fora do ar)")
+            if (totalPhotos > 0 || totalPdfs > 0) {
+                append("\nAnexos: $totalPhotos foto(s), $totalPdfs PDF(s)")
             }
-            MessageFormatStyle.LINES -> {
-                sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}\n\n")
-                sb.append("${state.postName}\n")
-
-                for (item in activeItems) {
-                    if (!item.isEnabled) continue
-
-                    if (item.isCamerasItem) {
-                        val camWorking = if (state.camerasWorkingCount.isNotBlank()) state.camerasWorkingCount else "OK"
-                        sb.append("${item.emoji} ${item.title}: ${camWorking}\n")
-                        if (state.monitor1Details.isNotBlank()) {
-                            sb.append("   ↳ *Monitor* ${state.monitor1Details}\n")
-                        }
-                        if (state.monitor2Details.isNotBlank()) {
-                            sb.append("   ↳ *Monitor* ${state.monitor2Details}\n")
-                        }
-                    } else {
-                        val check = state.itemStates[item.id] ?: ItemCheckState("OK")
-                        val statusText = when (check.status) {
-                            "OK" -> "*OK*"
-                            "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
-                            "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
-                            "NAO_POSSUI" -> "*N/A*"
-                            else -> "*${check.status}*"
-                        }
-                        val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
-                        sb.append("${item.emoji} ${item.title}: $statusText$photoBadge\n")
-                    }
-                }
-            }
-            MessageFormatStyle.INLINE -> {
-                sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}    ${state.postName}")
-                for (item in activeItems) {
-                    if (!item.isEnabled) continue
-
-                    if (item.isCamerasItem) {
-                        sb.append(" ")
-                        val camText = buildString {
-                            append("${item.emoji} ${item.title}: ${state.camerasWorkingCount}")
-                            if (state.monitor1Details.isNotBlank()) {
-                                append(" *Monitor* ${state.monitor1Details}")
-                            }
-                            if (state.monitor2Details.isNotBlank()) {
-                                append(" *Monitor* ${state.monitor2Details}")
-                            }
-                        }
-                        sb.append(camText)
-                    } else {
-                        val check = state.itemStates[item.id] ?: ItemCheckState("OK")
-                        val statusText = when (check.status) {
-                            "OK" -> "*OK*"
-                            "ATENCAO" -> if (check.observation.isNotBlank()) "*Obs: ${check.observation}*" else "*Atenção*"
-                            "DEFEITO" -> if (check.observation.isNotBlank()) "*Defeito: ${check.observation}*" else "*Fora do ar*"
-                            "NAO_POSSUI" -> "*N/A*"
-                            else -> "*${check.status}*"
-                        }
-                        val photoBadge = if (check.photoPath != null) " 📸 [Foto]" else ""
-                        sb.append(" ${item.emoji} ${item.title} $statusText$photoBadge")
-                    }
-                }
+            if (state.generalNotes.isNotBlank()) {
+                append("\nObs: ${state.generalNotes.trim()}")
             }
         }
-
-        val totalPhotos = state.itemStates.values.count { it.photoPath != null }
-        if (totalPhotos > 0) {
-            sb.append("\n📸 *$totalPhotos foto(s) de irregularidade anexada(s) ao relatório em PDF*")
-        }
-
-        if (state.generalNotes.isNotBlank()) {
-            sb.append("\n\n📝 *Ocorrências/Obs:* ${state.generalNotes}")
-        }
-
-        if (state.observationAttachments.isNotEmpty()) {
-            val obsPhotos = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
-            val obsPdfs = state.observationAttachments.count { it.type == AttachmentType.PDF }
-            sb.append("\n📎 *Anexos da observação:* $obsPhotos foto(s), $obsPdfs PDF(s)")
-        }
-
-        return sb.toString().trimEnd()
     }
 
     fun validateRequiredItems(activeItems: List<ChecklistTemplateItem>): List<String> {
@@ -776,12 +679,12 @@ class BpsViewModel(
      * preserving its 32-camera snapshot, checklist items snapshot, and observation attachments independently.
      */
     fun saveReportOffline(
-        formattedMessage: String,
         context: Context,
         activeItems: List<ChecklistTemplateItem> = templateItems.value
     ) {
         viewModelScope.launch {
             val state = _formState.value
+            val summaryText = buildReportSummaryText(activeItems)
             val itemPhotosCount = state.itemStates.values.count { it.photoPath != null }
             val obsPhotosCount = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
             val totalPhotos = itemPhotosCount + obsPhotosCount
@@ -791,7 +694,7 @@ class BpsViewModel(
                 postName = state.postName,
                 departingEmployee = state.departingEmployee.trim(),
                 receivingEmployee = state.receivingEmployee.trim(),
-                reportContent = formattedMessage,
+                reportContent = summaryText,
                 cameraWorkingCount = state.camerasWorkingCount,
                 monitor1Details = state.monitor1Details,
                 monitor2Details = state.monitor2Details,
@@ -812,12 +715,64 @@ class BpsViewModel(
         }
     }
 
-    fun syncPendingReportToWhatsApp(report: ShiftReport, context: Context) {
-        sendToWhatsAppInternal(context, report.reportContent, saveHistory = false)
+    fun shareSavedReportPdf(report: ShiftReport, context: Context) {
         viewModelScope.launch {
-            repository.markReportAsSynced(report.id)
-            Toast.makeText(context, "Relatório sincronizado e enviado!", Toast.LENGTH_SHORT).show()
+            val snapshotEntries = ChecklistSnapshotHelper.fromSnapshotJson(report.checklistSnapshotJson)
+            val (historyItems, historyStates) = if (snapshotEntries != null) {
+                ChecklistSnapshotHelper.toItemsAndStates(snapshotEntries)
+            } else {
+                templateItems.value.filter { it.isEnabled } to emptyMap()
+            }
+            val camSnapshot = getCameraStateForReport(report)
+            val attachments = getAttachmentsForReportDirect(report.id)
+            val tempState = ShiftFormUiState(
+                greeting = report.greeting,
+                postName = report.postName,
+                receivingEmployee = report.receivingEmployee,
+                departingEmployee = report.departingEmployee,
+                itemStates = historyStates,
+                cameraMonitoring = camSnapshot,
+                camerasWorkingCount = report.cameraWorkingCount,
+                monitor1Details = report.monitor1Details,
+                monitor2Details = report.monitor2Details,
+                generalNotes = report.generalNotes,
+                observationAttachments = attachments
+            )
+            val validationError = PdfReportGenerator.validateForPdf(tempState)
+            if (validationError != null) {
+                _pdfValidationError.value = validationError
+                Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            try {
+                val file = PdfReportGenerator.generateShiftPdf(
+                    context = context,
+                    formState = tempState,
+                    activeItems = historyItems,
+                    reportTimestamp = report.timestamp
+                )
+                val shareLaunched = PdfReportGenerator.sharePdf(context, file)
+                if (shareLaunched && report.isPendingSync) {
+                    _pendingShareConfirmationReportId.value = report.id
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "Erro ao gerar PDF.", Toast.LENGTH_LONG).show()
+            }
         }
+    }
+
+    fun confirmPdfSent(reportId: Long, context: Context) {
+        viewModelScope.launch {
+            repository.markReportAsSynced(reportId)
+            if (_pendingShareConfirmationReportId.value == reportId) {
+                _pendingShareConfirmationReportId.value = null
+            }
+            Toast.makeText(context, "Envio do PDF confirmado no histórico!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun dismissShareConfirmation() {
+        _pendingShareConfirmationReportId.value = null
     }
 
     fun markReportAsSynced(reportId: Long) {
@@ -833,53 +788,23 @@ class BpsViewModel(
         }
     }
 
-    fun sendToWhatsApp(context: Context, message: String, saveHistory: Boolean = true) {
-        sendToWhatsAppInternal(context, message, saveHistory)
-    }
-
-    private fun sendToWhatsAppInternal(context: Context, message: String, saveHistory: Boolean) {
-        try {
-            val encodedMessage = Uri.encode(message)
-            val directWhatsappIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("https://api.whatsapp.com/send?text=$encodedMessage")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(directWhatsappIntent)
-            Toast.makeText(context, "Abrindo WhatsApp...", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            try {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, message)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                val chooser = Intent.createChooser(shareIntent, "Compartilhar via WhatsApp ou aplicativo:")
-                chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(chooser)
-            } catch (err: Exception) {
-                Toast.makeText(context, "Não foi possível abrir o WhatsApp: ${err.message}", Toast.LENGTH_LONG).show()
-            }
-        }
-
-        if (saveHistory) {
-            saveCurrentReportToHistory(message)
-        }
-    }
-
     fun copyToClipboard(context: Context, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Registro BPS Facilities", text)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(context, "Texto copiado para a área de transferência!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Informações copiadas para a área de transferência!", Toast.LENGTH_SHORT).show()
     }
 
     fun saveCurrentReportToHistory(
-        formattedMessage: String,
         activeItems: List<ChecklistTemplateItem> = templateItems.value,
-        customTimestamp: Long = System.currentTimeMillis()
+        customTimestamp: Long = System.currentTimeMillis(),
+        isPendingSync: Boolean = false,
+        syncStatus: String = "SALVO LOCALMENTE",
+        onSaved: ((Long) -> Unit)? = null
     ) {
         viewModelScope.launch {
             val state = _formState.value
+            val summaryText = buildReportSummaryText(activeItems)
             val itemPhotosCount = state.itemStates.values.count { it.photoPath != null }
             val obsPhotosCount = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
             val totalPhotos = itemPhotosCount + obsPhotosCount
@@ -890,24 +815,25 @@ class BpsViewModel(
                 postName = state.postName,
                 departingEmployee = state.departingEmployee.trim(),
                 receivingEmployee = state.receivingEmployee.trim(),
-                reportContent = formattedMessage,
+                reportContent = summaryText,
                 cameraWorkingCount = state.camerasWorkingCount,
                 monitor1Details = state.monitor1Details,
                 monitor2Details = state.monitor2Details,
                 generalNotes = state.generalNotes,
-                isPendingSync = false,
-                syncStatus = "ENVIADO",
-                syncedAt = customTimestamp,
+                isPendingSync = isPendingSync,
+                syncStatus = syncStatus,
+                syncedAt = if (isPendingSync) null else customTimestamp,
                 hasPhotos = totalPhotos > 0,
                 photoCount = totalPhotos,
                 checklistSnapshotJson = checklistSnapshot
             )
-            repository.saveReportWithCamerasAndAttachments(
+            val newId = repository.saveReportWithCamerasAndAttachments(
                 report = report,
                 cameraState = state.cameraMonitoring,
                 draftAttachments = state.observationAttachments,
                 clearDraftAfter = true
             )
+            onSaved?.invoke(newId)
         }
     }
 
@@ -917,16 +843,16 @@ class BpsViewModel(
         }
     }
 
-    // PDF Export with Mandatory Nominal Signature Validation
-    fun exportAndSharePdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
+    // Exclusive PDF Export & Share with Mandatory Nominal Signature Validation + User Confirmation
+    fun exportAndSharePdf(context: Context, activeItems: List<ChecklistTemplateItem>): File? {
         val validationError = validateHandoverForPdf(activeItems)
         if (validationError != null) {
             _pdfValidationError.value = validationError
             Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
-            return
+            return null
         }
         _pdfValidationError.value = null
-        try {
+        return try {
             val handoverTimestamp = System.currentTimeMillis()
             val file = PdfReportGenerator.generateShiftPdf(
                 context = context,
@@ -934,16 +860,23 @@ class BpsViewModel(
                 activeItems = activeItems,
                 reportTimestamp = handoverTimestamp
             )
-            PdfReportGenerator.sharePdf(context, file)
-            saveCurrentReportToHistory(
-                formattedMessage = buildFormattedMessage(activeItems),
-                activeItems = activeItems,
-                customTimestamp = handoverTimestamp
-            )
+            val shareLaunched = PdfReportGenerator.sharePdf(context, file)
+            if (shareLaunched) {
+                saveCurrentReportToHistory(
+                    activeItems = activeItems,
+                    customTimestamp = handoverTimestamp,
+                    isPendingSync = true,
+                    syncStatus = "AGUARDANDO CONFIRMAÇÃO"
+                ) { reportId ->
+                    _pendingShareConfirmationReportId.value = reportId
+                }
+            }
+            file
         } catch (e: Exception) {
             val message = e.message ?: "Erro ao gerar PDF."
             _pdfValidationError.value = message
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            null
         }
     }
 

@@ -1,6 +1,7 @@
 package com.example
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -55,12 +57,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import android.os.Looper
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import com.example.ui.viewmodel.BpsViewModelFactory
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import java.io.File
 import java.io.FileOutputStream
@@ -76,9 +84,17 @@ class BpsUpdateFeaturesTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: BpsRepository
     private val tempFiles = mutableListOf<File>()
+    private val viewModelStores = mutableListOf<ViewModelStore>()
+
+    private fun createTestViewModel(): BpsViewModel {
+        val store = ViewModelStore()
+        viewModelStores.add(store)
+        return ViewModelProvider(store, BpsViewModelFactory(repository, NetworkMonitor(context)))[BpsViewModel::class.java]
+    }
 
     @Before
     fun setup() {
+        clearFileProviderCache()
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
@@ -88,10 +104,25 @@ class BpsUpdateFeaturesTest {
 
     @After
     fun teardown() {
+        viewModelStores.forEach { it.clear() }
+        viewModelStores.clear()
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        Thread.sleep(50)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         db.close()
         tempFiles.forEach { it.delete() }
         AttachmentStorageManager.getAttachmentsDir(context).deleteRecursively()
         File(context.filesDir, "generated_pdfs").deleteRecursively()
+        clearFileProviderCache()
+    }
+
+    private fun clearFileProviderCache() {
+        runCatching {
+            val field = FileProvider::class.java.getDeclaredField("sCache")
+            field.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            (field.get(null) as? MutableMap<*, *>)?.clear()
+        }
     }
 
     private fun createTempImageFile(name: String, width: Int, height: Int, format: Bitmap.CompressFormat, color: Int): File {
@@ -596,8 +627,7 @@ class BpsUpdateFeaturesTest {
     // 16. Safe Area + All 5 Navigation Tabs: header below status bar and bottom bar above 3-button nav bar
     @Test
     fun `test 16 - MainAppScreen respects top and bottom safe areas across all 5 tabs`() {
-        val networkMonitor = NetworkMonitor(context)
-        val viewModel = BpsViewModel(repository, networkMonitor)
+        val viewModel = createTestViewModel()
         var statusTopDp = 0f
         var navBottomDp = 0f
         var hostView: android.view.View? = null
@@ -834,7 +864,7 @@ class BpsUpdateFeaturesTest {
             AppDatabase.populateInitialData(db)
             repository.getAllTemplateItemsDirect()
         }
-        val viewModel = BpsViewModel(repository, NetworkMonitor(context))
+        val viewModel = createTestViewModel()
 
         // Blank both
         val blankBoth = ShiftFormUiState(departingEmployee = "", receivingEmployee = "")
@@ -925,7 +955,7 @@ class BpsUpdateFeaturesTest {
         kotlinx.coroutines.runBlocking {
             AppDatabase.populateInitialData(db)
         }
-        val viewModel = BpsViewModel(repository, NetworkMonitor(context))
+        val viewModel = createTestViewModel()
 
         composeTestRule.setContent {
             MyApplicationTheme(darkTheme = true) {
@@ -965,5 +995,112 @@ class BpsUpdateFeaturesTest {
             .performScrollToNode(hasTestTag("pdf_nominal_preview_banner"))
         composeTestRule.onNodeWithTag("pdf_nominal_preview_banner")
             .assertTextContains("Entrega (Higor) → Assume (Cláudia)", substring = true)
+    }
+
+    // 24. Intent exclusivo de compartilhamento PDF via FileProvider (ACTION_SEND, application/pdf, sem EXTRA_TEXT)
+    @Test
+    fun `test 24 - PDF share Intent uses ACTION_SEND application pdf FileProvider URI without EXTRA_TEXT`() {
+        kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+        }
+        val items = kotlinx.coroutines.runBlocking {
+            repository.getAllTemplateItemsDirect().sortedBy { it.orderIndex }
+        }
+        val formState = ShiftFormUiState(
+            greeting = "Boa Noite",
+            postName = "*PORTARIA*",
+            departingEmployee = "Higor",
+            receivingEmployee = "Cláudia"
+        )
+        val pdfFile = PdfReportGenerator.generateShiftPdf(context, formState, items)
+        val intent = PdfReportGenerator.buildPdfShareIntent(context, pdfFile)
+
+        assertEquals(Intent.ACTION_SEND, intent.action)
+        assertEquals("application/pdf", intent.type)
+        assertNull("PDF share intent must NOT carry EXTRA_TEXT message content", intent.getStringExtra(Intent.EXTRA_TEXT))
+        assertTrue((intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0)
+        assertNotNull(intent.clipData)
+
+        @Suppress("DEPRECATION")
+        val streamUri: Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        assertNotNull(streamUri)
+        assertEquals("content", streamUri?.scheme)
+        assertTrue(streamUri.toString().contains("fileprovider"))
+    }
+
+    // 25. Confirmação explícita: enviar PDF NÃO marca como ENVIADO antes da confirmação do usuário
+    @Test
+    fun `test 25 - exportAndSharePdf holds status AGUARDANDO CONFIRMACAO until confirmPdfSent is called`() {
+        val items = kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+            repository.getAllTemplateItemsDirect().sortedBy { it.orderIndex }
+        }
+        val viewModel = createTestViewModel()
+        viewModel.updateDepartingEmployee("Higor")
+        viewModel.updateReceivingEmployee("Cláudia")
+
+        val generatedFile = viewModel.exportAndSharePdf(context, items)
+        assertNotNull(generatedFile)
+        assertTrue(generatedFile!!.exists())
+
+        // Pump MainLooper until coroutine saves report + sets pendingShareConfirmationReportId
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (viewModel.pendingShareConfirmationReportId.value == null && System.currentTimeMillis() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            if (viewModel.pendingShareConfirmationReportId.value == null) Thread.sleep(20)
+        }
+        val pendingIdOrNull = viewModel.pendingShareConfirmationReportId.value
+        assertNotNull("Report should await explicit user send confirmation", pendingIdOrNull)
+        val pendingId = pendingIdOrNull!!
+
+        val beforeConfirm = kotlinx.coroutines.runBlocking { db.shiftReportDao().getReportById(pendingId)!! }
+        assertTrue(beforeConfirm.isPendingSync)
+        assertEquals("AGUARDANDO CONFIRMAÇÃO", beforeConfirm.syncStatus)
+        assertNull(beforeConfirm.syncedAt)
+
+        // Explicit confirmation transitions report to ENVIADO
+        viewModel.confirmPdfSent(pendingId, context)
+        val deadline2 = System.currentTimeMillis() + 5_000L
+        while (viewModel.pendingShareConfirmationReportId.value != null && System.currentTimeMillis() < deadline2) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            if (viewModel.pendingShareConfirmationReportId.value != null) Thread.sleep(20)
+        }
+        val afterConfirm = kotlinx.coroutines.runBlocking { db.shiftReportDao().getReportById(pendingId)!! }
+        assertFalse(afterConfirm.isPendingSync)
+        assertEquals("ENVIADO", afterConfirm.syncStatus)
+        assertNotNull(afterConfirm.syncedAt)
+    }
+
+    // 26. Compose UI: remoção total da prévia/envio de texto WhatsApp e presença do envio exclusivo em PDF
+    @Test
+    fun `test 26 - ShiftHandoverScreen removes text WhatsApp UI and shows exclusive PDF WhatsApp button`() {
+        kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+        }
+        val viewModel = createTestViewModel()
+
+        composeTestRule.setContent {
+            MyApplicationTheme(darkTheme = true) {
+                ShiftHandoverScreen(viewModel = viewModel)
+            }
+        }
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            viewModel.employees.value.size == 2 && viewModel.templateItems.value.size == 17
+        }
+        composeTestRule.waitForIdle()
+
+        // Confirm legacy text WhatsApp nodes no longer exist
+        assertEquals(0, composeTestRule.onAllNodesWithTag("whatsapp_preview_card").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithTag("send_whatsapp_button").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithTag("copy_text_button").fetchSemanticsNodes().size)
+
+        // Exclusive PDF WhatsApp button + preview button are present
+        composeTestRule.onNodeWithTag("shift_handover_list")
+            .performScrollToNode(hasTestTag("pdf_export_card"))
+        composeTestRule.onNodeWithTag("share_pdf_button")
+            .assertIsDisplayed()
+            .assertTextContains("Enviar PDF pelo WhatsApp", substring = true)
+        composeTestRule.onNodeWithTag("view_pdf_button")
+            .assertIsDisplayed()
     }
 }

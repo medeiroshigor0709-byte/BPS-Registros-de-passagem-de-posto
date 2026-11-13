@@ -201,7 +201,7 @@ object AttachmentStorageManager {
         return when {
             bytes < 1024 -> "$bytes B"
             bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-            else -> String.format(Locale("pt", "BR"), "%.1f MB", bytes / (1024.0 * 1024.0))
+            else -> String.format(Locale.forLanguageTag("pt-BR"), "%.1f MB", bytes / (1024.0 * 1024.0))
         }
     }
 }
