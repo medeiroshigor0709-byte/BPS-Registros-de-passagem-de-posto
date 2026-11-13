@@ -10,12 +10,22 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.AttachmentType
+import com.example.data.model.CameraMonitoringState
+import com.example.data.model.CameraStatus
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ShiftAttachment
 import com.example.data.model.ShiftDraft
 import com.example.data.model.ShiftReport
 import com.example.data.repository.BpsRepository
+import com.example.util.AttachmentStorageManager
+import com.example.util.ImageToPdfConverter
 import com.example.util.NetworkMonitor
+import com.example.util.PdfReportGenerator
+import com.example.util.SelectedImageItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,8 +33,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Calendar
 
 data class ItemCheckState(
@@ -45,13 +55,29 @@ data class ShiftFormUiState(
     val receivingEmployee: String = "Higor",
     val departingEmployee: String = "",
     val itemStates: Map<Long, ItemCheckState> = emptyMap(),
-    // Specific camera fields as requested by user
-    val camerasWorkingCount: String = "28 funcionando",
-    val monitor1Details: String = "1 Câmera 15 fora do ar",
-    val monitor2Details: String = "2 Câmeras 11,15 e 16 fora do ar",
+    val cameraMonitoring: CameraMonitoringState = CameraMonitoringState.allWorking(),
+    val camerasWorkingCount: String = CameraMonitoringState.allWorking().toWorkingCountText(),
+    val monitor1Details: String = CameraMonitoringState.allWorking().toMonitorDetailsText(1),
+    val monitor2Details: String = CameraMonitoringState.allWorking().toMonitorDetailsText(2),
     val generalNotes: String = "",
+    val observationAttachments: List<ShiftAttachment> = emptyList(),
     val isCamerasActive: Boolean = true,
     val formatStyle: MessageFormatStyle = MessageFormatStyle.TOPICS
+)
+
+data class ImageToPdfUiState(
+    val selectedImages: List<SelectedImageItem> = emptyList(),
+    val isConverting: Boolean = false,
+    val generatedPdfFile: File? = null,
+    val generatedPageCount: Int = 0,
+    val generatedFileSizeBytes: Long = 0L,
+    val statusMessage: String? = null,
+    val isError: Boolean = false
+)
+
+data class AttachmentFeedback(
+    val message: String,
+    val isError: Boolean = false
 )
 
 class BpsViewModel(
@@ -80,6 +106,12 @@ class BpsViewModel(
     private val _formState = MutableStateFlow(ShiftFormUiState())
     val formState: StateFlow<ShiftFormUiState> = _formState.asStateFlow()
 
+    private val _imageToPdfState = MutableStateFlow(ImageToPdfUiState())
+    val imageToPdfState: StateFlow<ImageToPdfUiState> = _imageToPdfState.asStateFlow()
+
+    private val _attachmentFeedback = MutableStateFlow<AttachmentFeedback?>(null)
+    val attachmentFeedback: StateFlow<AttachmentFeedback?> = _attachmentFeedback.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -89,20 +121,29 @@ class BpsViewModel(
             restoreDraftIfExists()
             detectAutoGreeting()
         }
+        viewModelScope.launch {
+            repository.draftAttachments.collect { attachments ->
+                _formState.update { it.copy(observationAttachments = attachments) }
+            }
+        }
     }
 
     private suspend fun restoreDraftIfExists() {
         val draft = repository.getDraftDirect()
         if (draft != null) {
+            val restoredCameras = CameraMonitoringState.fromSnapshotJson(draft.cameraStatesJson)
+                ?: CameraMonitoringState.fromLegacyStrings(draft.monitor1Details, draft.monitor2Details)
+
             _formState.update { current ->
                 current.copy(
                     greeting = draft.greeting,
                     postName = draft.postName,
                     receivingEmployee = draft.receivingEmployee,
                     departingEmployee = draft.departingEmployee,
-                    camerasWorkingCount = draft.cameraWorkingCount,
-                    monitor1Details = draft.monitor1Details,
-                    monitor2Details = draft.monitor2Details,
+                    cameraMonitoring = restoredCameras,
+                    camerasWorkingCount = restoredCameras.toWorkingCountText(),
+                    monitor1Details = restoredCameras.toMonitorDetailsText(1),
+                    monitor2Details = restoredCameras.toMonitorDetailsText(2),
                     generalNotes = draft.generalNotes
                 )
             }
@@ -176,29 +217,77 @@ class BpsViewModel(
     }
 
     fun saveBitmapToLocalCache(context: Context, bitmap: Bitmap): String {
-        val photosDir = File(context.cacheDir, "checklist_photos")
-        if (!photosDir.exists()) photosDir.mkdirs()
-        val file = File(photosDir, "foto_${System.currentTimeMillis()}.jpg")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-        }
-        return file.absolutePath
+        return AttachmentStorageManager.saveChecklistBitmap(context, bitmap)
     }
 
     fun copyUriToLocalCache(context: Context, uri: Uri): String? {
-        return try {
-            val photosDir = File(context.cacheDir, "checklist_photos")
-            if (!photosDir.exists()) photosDir.mkdirs()
-            val file = File(photosDir, "foto_${System.currentTimeMillis()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(file).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            file.absolutePath
-        } catch (e: Exception) {
-            null
+        return AttachmentStorageManager.copyChecklistUri(context, uri)
+    }
+
+    // 32-Camera Monitoring Actions (Monitor 1: 16 cameras + Monitor 2: 16 cameras)
+    fun setCameraStatus(monitorNumber: Int, cameraNumber: Int, status: CameraStatus) {
+        _formState.update { state ->
+            val updatedCameras = state.cameraMonitoring.withCameraStatus(monitorNumber, cameraNumber, status)
+            state.copy(
+                cameraMonitoring = updatedCameras,
+                camerasWorkingCount = updatedCameras.toWorkingCountText(),
+                monitor1Details = updatedCameras.toMonitorDetailsText(1),
+                monitor2Details = updatedCameras.toMonitorDetailsText(2)
+            )
         }
+        autosaveDraft()
+    }
+
+    fun toggleCameraStatus(monitorNumber: Int, cameraNumber: Int) {
+        _formState.update { state ->
+            val updatedCameras = state.cameraMonitoring.toggleCamera(monitorNumber, cameraNumber)
+            state.copy(
+                cameraMonitoring = updatedCameras,
+                camerasWorkingCount = updatedCameras.toWorkingCountText(),
+                monitor1Details = updatedCameras.toMonitorDetailsText(1),
+                monitor2Details = updatedCameras.toMonitorDetailsText(2)
+            )
+        }
+        autosaveDraft()
+    }
+
+    fun setAllMonitorCameras(monitorNumber: Int, status: CameraStatus) {
+        _formState.update { state ->
+            val updatedCameras = state.cameraMonitoring.withAllMonitorStatus(monitorNumber, status)
+            state.copy(
+                cameraMonitoring = updatedCameras,
+                camerasWorkingCount = updatedCameras.toWorkingCountText(),
+                monitor1Details = updatedCameras.toMonitorDetailsText(1),
+                monitor2Details = updatedCameras.toMonitorDetailsText(2)
+            )
+        }
+        autosaveDraft()
+    }
+
+    fun applyAllCamerasWorking() {
+        val updatedCameras = CameraMonitoringState.allWorking()
+        _formState.update { state ->
+            state.copy(
+                cameraMonitoring = updatedCameras,
+                camerasWorkingCount = updatedCameras.toWorkingCountText(),
+                monitor1Details = updatedCameras.toMonitorDetailsText(1),
+                monitor2Details = updatedCameras.toMonitorDetailsText(2)
+            )
+        }
+        autosaveDraft()
+    }
+
+    fun applyDefaultBpsCameraPreset() {
+        val updatedCameras = CameraMonitoringState.defaultBpsPreset()
+        _formState.update { state ->
+            state.copy(
+                cameraMonitoring = updatedCameras,
+                camerasWorkingCount = updatedCameras.toWorkingCountText(),
+                monitor1Details = updatedCameras.toMonitorDetailsText(1),
+                monitor2Details = updatedCameras.toMonitorDetailsText(2)
+            )
+        }
+        autosaveDraft()
     }
 
     fun updateCamerasInfo(workingCount: String, mon1: String, mon2: String) {
@@ -217,6 +306,275 @@ class BpsViewModel(
         autosaveDraft()
     }
 
+    // Observation Attachments (Draft & History Report editing)
+    fun clearAttachmentFeedback() {
+        _attachmentFeedback.value = null
+    }
+
+    fun attachObservationFiles(context: Context, uris: List<Uri>, type: String) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            var addedCount = 0
+            var duplicateCount = 0
+            var lastError: String? = null
+
+            withContext(Dispatchers.IO) {
+                uris.forEach { uri ->
+                    val imported = AttachmentStorageManager.importAttachmentFromUri(context, uri, type)
+                    imported.onSuccess { stored ->
+                        val (_, wasDuplicate) = repository.addDraftAttachment(
+                            ShiftAttachment(
+                                reportId = null,
+                                type = stored.type,
+                                displayName = stored.displayName,
+                                filePath = stored.filePath,
+                                mimeType = stored.mimeType,
+                                sizeBytes = stored.sizeBytes,
+                                sha256 = stored.sha256
+                            )
+                        )
+                        if (wasDuplicate) duplicateCount++ else addedCount++
+                    }.onFailure { err ->
+                        lastError = err.message
+                    }
+                }
+            }
+
+            val label = if (type == AttachmentType.PDF) "PDF(s)" else "foto(s)"
+            _attachmentFeedback.value = when {
+                lastError != null && addedCount == 0 -> AttachmentFeedback(lastError!!, isError = true)
+                addedCount > 0 && duplicateCount > 0 ->
+                    AttachmentFeedback("$addedCount $label anexado(s) ($duplicateCount já estava(m) anexado(s)).")
+                addedCount > 0 ->
+                    AttachmentFeedback("$addedCount $label anexado(s) com armazenamento persistente.")
+                duplicateCount > 0 ->
+                    AttachmentFeedback("Arquivo(s) já anexado(s) a esta observação.")
+                else -> null
+            }
+        }
+    }
+
+    fun removeDraftAttachment(context: Context, attachment: ShiftAttachment) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.removeAttachment(attachment, context)
+            _attachmentFeedback.value = AttachmentFeedback("Anexo '${attachment.displayName}' removido.")
+        }
+    }
+
+    fun observeAttachmentsForReport(reportId: Long): Flow<List<ShiftAttachment>> =
+        repository.getAttachmentsForReport(reportId)
+
+    suspend fun getAttachmentsForReportDirect(reportId: Long): List<ShiftAttachment> =
+        repository.getAttachmentsForReportDirect(reportId)
+
+    fun attachFilesToSavedReport(context: Context, reportId: Long, uris: List<Uri>, type: String) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            var addedCount = 0
+            var duplicateCount = 0
+            var lastError: String? = null
+
+            withContext(Dispatchers.IO) {
+                uris.forEach { uri ->
+                    val imported = AttachmentStorageManager.importAttachmentFromUri(context, uri, type)
+                    imported.onSuccess { stored ->
+                        val (_, wasDuplicate) = repository.addAttachmentToReport(
+                            reportId = reportId,
+                            attachment = ShiftAttachment(
+                                reportId = reportId,
+                                type = stored.type,
+                                displayName = stored.displayName,
+                                filePath = stored.filePath,
+                                mimeType = stored.mimeType,
+                                sizeBytes = stored.sizeBytes,
+                                sha256 = stored.sha256
+                            )
+                        )
+                        if (wasDuplicate) duplicateCount++ else addedCount++
+                    }.onFailure { err ->
+                        lastError = err.message
+                    }
+                }
+            }
+
+            val msg = when {
+                lastError != null && addedCount == 0 -> lastError!!
+                addedCount > 0 -> "$addedCount anexo(s) adicionado(s) ao registro #$reportId!"
+                duplicateCount > 0 -> "Arquivo(s) já vinculado(s) a este registro."
+                else -> ""
+            }
+            if (msg.isNotBlank()) {
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun removeAttachmentFromSavedReport(context: Context, attachment: ShiftAttachment) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.removeAttachment(attachment, context)
+        }
+    }
+
+    fun updateSavedReportNotes(reportId: Long, notes: String, context: Context) {
+        viewModelScope.launch {
+            repository.updateReportNotes(reportId, notes)
+            Toast.makeText(context, "Observações atualizadas no registro!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    suspend fun getCameraStateForReport(report: ShiftReport): CameraMonitoringState {
+        CameraMonitoringState.fromSnapshotJson(report.cameraStatesJson)?.let { return it }
+        val records = repository.getCameraRecordsForReportDirect(report.id)
+        CameraMonitoringState.fromRecords(records)?.let { return it }
+        return CameraMonitoringState.fromLegacyStrings(report.monitor1Details, report.monitor2Details)
+    }
+
+    // Image to PDF Converter Operations
+    fun addImagesForPdf(context: Context, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val validItems = mutableListOf<SelectedImageItem>()
+            val unsupportedNames = mutableListOf<String>()
+
+            withContext(Dispatchers.IO) {
+                uris.forEach { uri ->
+                    val name = AttachmentStorageManager.resolveDisplayName(context, uri, AttachmentType.PHOTO)
+                    val (supported, badge) = ImageToPdfConverter.isSupportedImage(context, uri)
+                    if (supported) {
+                        val existingUris = _imageToPdfState.value.selectedImages.map { it.uri }
+                        if (uri !in existingUris && validItems.none { it.uri == uri }) {
+                            validItems.add(
+                                SelectedImageItem(
+                                    uri = uri,
+                                    displayName = name,
+                                    formatLabel = badge
+                                )
+                            )
+                        }
+                    } else {
+                        unsupportedNames.add("$name ($badge)")
+                    }
+                }
+            }
+
+            _imageToPdfState.update { state ->
+                val updated = state.selectedImages + validItems
+                val message = when {
+                    unsupportedNames.isNotEmpty() && validItems.isEmpty() ->
+                        "Formato não suportado: ${unsupportedNames.joinToString(", ")}. Aceitos: JPG, JPEG, PNG, WEBP."
+                    unsupportedNames.isNotEmpty() ->
+                        "${validItems.size} imagem(ns) adicionada(s). Ignorada(s) por formato inválido: ${unsupportedNames.joinToString(", ")}"
+                    validItems.isNotEmpty() ->
+                        "${validItems.size} imagem(ns) pronta(s) para conversão em PDF."
+                    else -> "As imagens selecionadas já estão na lista."
+                }
+                state.copy(
+                    selectedImages = updated,
+                    generatedPdfFile = null,
+                    statusMessage = message,
+                    isError = unsupportedNames.isNotEmpty() && validItems.isEmpty()
+                )
+            }
+        }
+    }
+
+    fun removeImageFromPdfQueue(index: Int) {
+        _imageToPdfState.update { state ->
+            if (index !in state.selectedImages.indices) return@update state
+            val mutable = state.selectedImages.toMutableList().apply { removeAt(index) }
+            state.copy(
+                selectedImages = mutable,
+                generatedPdfFile = null,
+                statusMessage = null,
+                isError = false
+            )
+        }
+    }
+
+    fun moveImageInPdfQueue(fromIndex: Int, toIndex: Int) {
+        _imageToPdfState.update { state ->
+            if (fromIndex !in state.selectedImages.indices || toIndex !in state.selectedImages.indices) {
+                return@update state
+            }
+            val mutable = state.selectedImages.toMutableList()
+            val item = mutable.removeAt(fromIndex)
+            mutable.add(toIndex, item)
+            state.copy(selectedImages = mutable, generatedPdfFile = null)
+        }
+    }
+
+    fun clearImagesForPdf() {
+        _imageToPdfState.value = ImageToPdfUiState()
+    }
+
+    fun convertSelectedImagesToPdf(context: Context) {
+        val currentImages = _imageToPdfState.value.selectedImages
+        if (currentImages.isEmpty()) {
+            _imageToPdfState.update {
+                it.copy(statusMessage = "Selecione ao menos uma imagem antes de converter.", isError = true)
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _imageToPdfState.update {
+                it.copy(isConverting = true, statusMessage = null, isError = false)
+            }
+            val result = withContext(Dispatchers.IO) {
+                ImageToPdfConverter.convertImagesToPdf(
+                    context = context,
+                    imageUris = currentImages.map { it.uri }
+                )
+            }
+            result.onSuccess { pdfResult ->
+                _imageToPdfState.update {
+                    it.copy(
+                        isConverting = false,
+                        generatedPdfFile = pdfResult.pdfFile,
+                        generatedPageCount = pdfResult.pageCount,
+                        generatedFileSizeBytes = pdfResult.fileSizeBytes,
+                        statusMessage = "PDF gerado com sucesso! (${pdfResult.pageCount} página(s) • ${AttachmentStorageManager.formatFileSize(pdfResult.fileSizeBytes)})",
+                        isError = false
+                    )
+                }
+            }.onFailure { err ->
+                _imageToPdfState.update {
+                    it.copy(
+                        isConverting = false,
+                        generatedPdfFile = null,
+                        statusMessage = err.message ?: "Erro ao converter imagens em PDF.",
+                        isError = true
+                    )
+                }
+            }
+        }
+    }
+
+    fun saveGeneratedPdfToUri(context: Context, destinationUri: Uri) {
+        val file = _imageToPdfState.value.generatedPdfFile ?: return
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                ImageToPdfConverter.savePdfToDestinationUri(context, file, destinationUri)
+            }
+            result.onSuccess {
+                _imageToPdfState.update {
+                    it.copy(
+                        statusMessage = "Documento PDF salvo no dispositivo com sucesso!",
+                        isError = false
+                    )
+                }
+                Toast.makeText(context, "PDF salvo no dispositivo com sucesso!", Toast.LENGTH_LONG).show()
+            }.onFailure { err ->
+                _imageToPdfState.update {
+                    it.copy(
+                        statusMessage = "Erro ao salvar PDF: ${err.message}",
+                        isError = true
+                    )
+                }
+            }
+        }
+    }
+
     private fun autosaveDraft() {
         viewModelScope.launch {
             val s = _formState.value
@@ -228,7 +586,8 @@ class BpsViewModel(
                 cameraWorkingCount = s.camerasWorkingCount,
                 monitor1Details = s.monitor1Details,
                 monitor2Details = s.monitor2Details,
-                generalNotes = s.generalNotes
+                generalNotes = s.generalNotes,
+                cameraStatesJson = s.cameraMonitoring.toSnapshotJson()
             )
             repository.saveDraft(draft)
         }
@@ -246,19 +605,6 @@ class BpsViewModel(
         _formState.update { it.copy(formatStyle = style) }
     }
 
-    /**
-     * Builds the formatted message string.
-     * When style is TOPICS (default):
-     * Places each item on its own separate line in bulleted topics:
-     *
-     * Boa Noite passo o posto para o porteiro: Higor
-     *
-     * *PORTARIA*
-     * • 📱 Celular: *OK*
-     * • 🔌 Carregador: *OK*
-     * • 📞 Interfone: *OK*
-     * ...
-     */
     fun buildFormattedMessage(activeItems: List<ChecklistTemplateItem>): String {
         val state = _formState.value
         val sb = StringBuilder()
@@ -266,7 +612,6 @@ class BpsViewModel(
 
         when (state.formatStyle) {
             MessageFormatStyle.TOPICS -> {
-                // Em tópicos com marcadores (•) - um item embaixo do outro
                 sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}\n\n")
                 sb.append("${state.postName}\n")
 
@@ -297,7 +642,6 @@ class BpsViewModel(
                 }
             }
             MessageFormatStyle.LINES -> {
-                // Em linhas simples (sem marcador de ponto) - um item embaixo do outro
                 sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}\n\n")
                 sb.append("${state.postName}\n")
 
@@ -328,7 +672,6 @@ class BpsViewModel(
                 }
             }
             MessageFormatStyle.INLINE -> {
-                // Formato original em linha contínua
                 sb.append("${state.greeting} passo o posto para o porteiro: ${recipient}    ${state.postName}")
                 for (item in activeItems) {
                     if (!item.isEnabled) continue
@@ -370,12 +713,15 @@ class BpsViewModel(
             sb.append("\n\n📝 *Ocorrências/Obs:* ${state.generalNotes}")
         }
 
+        if (state.observationAttachments.isNotEmpty()) {
+            val obsPhotos = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
+            val obsPdfs = state.observationAttachments.count { it.type == AttachmentType.PDF }
+            sb.append("\n📎 *Anexos da observação:* $obsPhotos foto(s), $obsPdfs PDF(s)")
+        }
+
         return sb.toString().trimEnd()
     }
 
-    /**
-     * Verifies if any required item is not answered/has issues without observation
-     */
     fun validateRequiredItems(activeItems: List<ChecklistTemplateItem>): List<String> {
         val missing = mutableListOf<String>()
         val state = _formState.value
@@ -394,12 +740,15 @@ class BpsViewModel(
     }
 
     /**
-     * Saves a checklist locally in Room even without internet connection (Pending Sync)
+     * Saves a checklist locally in Room even without internet connection (Pending Sync),
+     * preserving its 32-camera snapshot and observation attachments independently.
      */
     fun saveReportOffline(formattedMessage: String, context: Context) {
         viewModelScope.launch {
             val state = _formState.value
-            val photosCount = state.itemStates.values.count { it.photoPath != null }
+            val itemPhotosCount = state.itemStates.values.count { it.photoPath != null }
+            val obsPhotosCount = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
+            val totalPhotos = itemPhotosCount + obsPhotosCount
             val report = ShiftReport(
                 greeting = state.greeting,
                 postName = state.postName,
@@ -412,17 +761,21 @@ class BpsViewModel(
                 generalNotes = state.generalNotes,
                 isPendingSync = true,
                 syncStatus = "PENDENTE",
-                hasPhotos = photosCount > 0,
-                photoCount = photosCount
+                hasPhotos = totalPhotos > 0,
+                photoCount = totalPhotos
             )
-            repository.saveReport(report)
-            repository.clearDraft()
-            Toast.makeText(context, "Checklist salvo localmente no Room! Pronto para envio posterior.", Toast.LENGTH_LONG).show()
+            repository.saveReportWithCamerasAndAttachments(
+                report = report,
+                cameraState = state.cameraMonitoring,
+                draftAttachments = state.observationAttachments,
+                clearDraftAfter = true
+            )
+            Toast.makeText(context, "Checklist, 32 câmeras e anexos salvos localmente!", Toast.LENGTH_LONG).show()
         }
     }
 
     fun syncPendingReportToWhatsApp(report: ShiftReport, context: Context) {
-        sendToWhatsApp(context, report.reportContent)
+        sendToWhatsAppInternal(context, report.reportContent, saveHistory = false)
         viewModelScope.launch {
             repository.markReportAsSynced(report.id)
             Toast.makeText(context, "Relatório sincronizado e enviado!", Toast.LENGTH_SHORT).show()
@@ -442,7 +795,11 @@ class BpsViewModel(
         }
     }
 
-    fun sendToWhatsApp(context: Context, message: String) {
+    fun sendToWhatsApp(context: Context, message: String, saveHistory: Boolean = true) {
+        sendToWhatsAppInternal(context, message, saveHistory)
+    }
+
+    private fun sendToWhatsAppInternal(context: Context, message: String, saveHistory: Boolean) {
         try {
             val encodedMessage = Uri.encode(message)
             val directWhatsappIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -466,8 +823,9 @@ class BpsViewModel(
             }
         }
 
-        // Also save automatically to history as sent
-        saveCurrentReportToHistory(message)
+        if (saveHistory) {
+            saveCurrentReportToHistory(message)
+        }
     }
 
     fun copyToClipboard(context: Context, text: String) {
@@ -480,7 +838,9 @@ class BpsViewModel(
     fun saveCurrentReportToHistory(formattedMessage: String) {
         viewModelScope.launch {
             val state = _formState.value
-            val photosCount = state.itemStates.values.count { it.photoPath != null }
+            val itemPhotosCount = state.itemStates.values.count { it.photoPath != null }
+            val obsPhotosCount = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
+            val totalPhotos = itemPhotosCount + obsPhotosCount
             val report = ShiftReport(
                 greeting = state.greeting,
                 postName = state.postName,
@@ -494,43 +854,60 @@ class BpsViewModel(
                 isPendingSync = false,
                 syncStatus = "ENVIADO",
                 syncedAt = System.currentTimeMillis(),
-                hasPhotos = photosCount > 0,
-                photoCount = photosCount
+                hasPhotos = totalPhotos > 0,
+                photoCount = totalPhotos
             )
-            repository.saveReport(report)
-            repository.clearDraft()
+            repository.saveReportWithCamerasAndAttachments(
+                report = report,
+                cameraState = state.cameraMonitoring,
+                draftAttachments = state.observationAttachments,
+                clearDraftAfter = true
+            )
         }
     }
 
-    fun deleteReport(report: ShiftReport) {
+    fun deleteReport(report: ShiftReport, context: Context? = null) {
         viewModelScope.launch {
-            repository.deleteReport(report)
+            repository.deleteReport(report, context)
         }
     }
 
     // PDF Export
     fun exportAndSharePdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
         try {
-            val file = com.example.util.PdfReportGenerator.generateShiftPdf(
+            val file = PdfReportGenerator.generateShiftPdf(
                 context = context,
                 formState = _formState.value,
                 activeItems = activeItems
             )
-            com.example.util.PdfReportGenerator.sharePdf(context, file)
+            PdfReportGenerator.sharePdf(context, file)
             saveCurrentReportToHistory(buildFormattedMessage(activeItems))
         } catch (e: Exception) {
             Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    fun exportAndViewPdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
-        try {
-            val file = com.example.util.PdfReportGenerator.generateShiftPdf(
+    fun generateShiftPdfFile(context: Context, activeItems: List<ChecklistTemplateItem>): File? {
+        return try {
+            PdfReportGenerator.generateShiftPdf(
                 context = context,
                 formState = _formState.value,
                 activeItems = activeItems
             )
-            com.example.util.PdfReportGenerator.viewPdf(context, file)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            null
+        }
+    }
+
+    fun exportAndViewPdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
+        try {
+            val file = PdfReportGenerator.generateShiftPdf(
+                context = context,
+                formState = _formState.value,
+                activeItems = activeItems
+            )
+            PdfReportGenerator.viewPdf(context, file)
         } catch (e: Exception) {
             Toast.makeText(context, "Erro ao abrir PDF: ${e.message}", Toast.LENGTH_LONG).show()
         }

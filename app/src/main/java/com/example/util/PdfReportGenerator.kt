@@ -209,30 +209,51 @@ object PdfReportGenerator {
 
         // 4. CFTV Cameras Dedicated Card
         paint.color = cardBg
-        val cftvRect = RectF(25f, yPos, 570f, yPos + 60f)
+        val cftvRect = RectF(25f, yPos, 570f, yPos + 76f)
         canvas.drawRoundRect(cftvRect, 8f, 8f, paint)
         paint.color = lineGray
         paint.style = Paint.Style.STROKE
         canvas.drawRoundRect(cftvRect, 8f, 8f, paint)
         paint.style = Paint.Style.FILL
 
+        val camState = formState.cameraMonitoring
+        val m1Sum = camState.monitor1Summary
+        val m2Sum = camState.monitor2Summary
+
         paint.color = textDark
         paint.textSize = 10f
         paint.isFakeBoldText = true
-        canvas.drawText("🎥 MONITORAMENTO CFTV / CÂMERAS", 35f, yPos + 20f, paint)
+        canvas.drawText(
+            "🎥 MONITORAMENTO CFTV (${camState.totalWorking}/${camState.totalCameras} funcionando | ${camState.totalOffline} fora do ar)",
+            35f,
+            yPos + 18f,
+            paint
+        )
 
-        paint.textSize = 9f
+        paint.textSize = 8.5f
         paint.isFakeBoldText = false
-        canvas.drawText("• Funcionando: ${formState.camerasWorkingCount}", 35f, yPos + 36f, paint)
-        canvas.drawText("• Monitor 1: ${formState.monitor1Details}", 35f, yPos + 50f, paint)
-        canvas.drawText("• Monitor 2: ${formState.monitor2Details}", 310f, yPos + 50f, paint)
+        canvas.drawText("• Resumo: ${formState.camerasWorkingCount}", 35f, yPos + 34f, paint)
+        canvas.drawText(
+            "• Monitor 1 (${m1Sum.working}/16 OK, ${m1Sum.offline} fora): ${formState.monitor1Details}".take(86),
+            35f,
+            yPos + 49f,
+            paint
+        )
+        canvas.drawText(
+            "• Monitor 2 (${m2Sum.working}/16 OK, ${m2Sum.offline} fora): ${formState.monitor2Details}".take(86),
+            35f,
+            yPos + 64f,
+            paint
+        )
 
-        yPos += 75f
+        yPos += 90f
 
         // 5. General Notes / Occurrences (if any)
-        if (formState.generalNotes.isNotBlank()) {
+        val obsAttachments = formState.observationAttachments
+        if (formState.generalNotes.isNotBlank() || obsAttachments.isNotEmpty()) {
+            val boxHeight = if (obsAttachments.isNotEmpty() && formState.generalNotes.isNotBlank()) 56f else 42f
             paint.color = cardBg
-            val notesRect = RectF(25f, yPos, 570f, yPos + 40f)
+            val notesRect = RectF(25f, yPos, 570f, yPos + boxHeight)
             canvas.drawRoundRect(notesRect, 8f, 8f, paint)
             paint.color = lineGray
             paint.style = Paint.Style.STROKE
@@ -244,13 +265,26 @@ object PdfReportGenerator {
             paint.isFakeBoldText = true
             canvas.drawText("📝 OCORRÊNCIAS / OBSERVAÇÕES:", 35f, yPos + 16f, paint)
             paint.isFakeBoldText = false
-            canvas.drawText(formState.generalNotes.take(100), 35f, yPos + 30f, paint)
+            val notesText = if (formState.generalNotes.isNotBlank()) formState.generalNotes.take(92) else "Sem texto adicional."
+            canvas.drawText(notesText, 35f, yPos + 30f, paint)
+            if (obsAttachments.isNotEmpty()) {
+                val photoCount = obsAttachments.count { it.type == com.example.data.model.AttachmentType.PHOTO }
+                val pdfCount = obsAttachments.count { it.type == com.example.data.model.AttachmentType.PDF }
+                paint.color = textMuted
+                paint.textSize = 8f
+                canvas.drawText(
+                    "📎 Anexos vinculados: $photoCount foto(s) e $pdfCount documento(s) PDF",
+                    35f,
+                    yPos + 46f,
+                    paint
+                )
+            }
 
-            yPos += 50f
+            yPos += boxHeight + 10f
         }
 
         // 6. Signatures Area
-        val signatureY = 740f
+        val signatureY = 755f
         paint.color = textMuted
         paint.strokeWidth = 1f
         // Line for departing guard
@@ -268,101 +302,130 @@ object PdfReportGenerator {
         paint.color = textMuted
         paint.textSize = 8f
         paint.isFakeBoldText = false
-        canvas.drawText("BPS Facilities - Segurança & Facilities | Documento autenticado via Sistema Operacional de Portaria", 85f, 810f, paint)
+        canvas.drawText("BPS Facilities - Segurança & Facilities | Documento autenticado via Sistema Operacional de Portaria", 85f, 815f, paint)
 
         pdfDocument.finishPage(page)
 
-        // Page 2: Photographic Annex (if any items have photos attached)
-        val itemsWithPhotos = activeItems.filter {
-            val path = formState.itemStates[it.id]?.photoPath
-            path != null && File(path).exists()
-        }
+        // Page 2: Photographic Annex (checklist irregularity photos + observation photo attachments)
+        data class AnnexPhoto(val title: String, val subtitle: String, val description: String, val path: String, val isError: Boolean)
+        val annexPhotos = mutableListOf<AnnexPhoto>()
 
-        if (itemsWithPhotos.isNotEmpty()) {
-            val page2Info = PdfDocument.PageInfo.Builder(595, 842, 2).create()
-            val page2 = pdfDocument.startPage(page2Info)
-            val canvas2: Canvas = page2.canvas
-
-            // Page 2 Header Banner
-            paint.color = navyBg
-            canvas2.drawRect(0f, 0f, 595f, 65f, paint)
-            paint.color = goldPrimary
-            canvas2.drawRect(0f, 63f, 595f, 65f, paint)
-
-            paint.color = Color.WHITE
-            paint.textSize = 14f
-            paint.isFakeBoldText = true
-            canvas2.drawText("BPS FACILITIES", 25f, 28f, paint)
-
-            paint.color = goldLight
-            paint.textSize = 10f
-            canvas2.drawText("ANEXO FOTOGRÁFICO DE IRREGULARIDADES E OCORRÊNCIAS", 25f, 48f, paint)
-
-            for ((idx, item) in itemsWithPhotos.take(4).withIndex()) {
-                val check = formState.itemStates[item.id]!!
-                val photoPath = check.photoPath!!
-                val xPos = if (idx % 2 == 0) 25f else 305f
-                val currentY = if (idx < 2) 85f else 430f
-
-                // Draw photo card background
-                paint.color = cardBg
-                val cardRect = RectF(xPos, currentY, xPos + 265f, currentY + 325f)
-                canvas2.drawRoundRect(cardRect, 8f, 8f, paint)
-                paint.color = lineGray
-                paint.style = Paint.Style.STROKE
-                canvas2.drawRoundRect(cardRect, 8f, 8f, paint)
-                paint.style = Paint.Style.FILL
-
-                // Load and draw photo
-                try {
-                    val rawBitmap = BitmapFactory.decodeFile(photoPath)
-                    if (rawBitmap != null) {
-                        val scaled = Bitmap.createScaledBitmap(rawBitmap, 245, 200, true)
-                        canvas2.drawBitmap(scaled, xPos + 10f, currentY + 10f, null)
-                    }
-                } catch (_: Exception) {}
-
-                // Item info under photo
-                paint.color = textDark
-                paint.textSize = 11f
-                paint.isFakeBoldText = true
-                canvas2.drawText("${item.emoji} ${item.title}", xPos + 10f, currentY + 230f, paint)
-
+        activeItems.forEach { item ->
+            val check = formState.itemStates[item.id]
+            val path = check?.photoPath
+            if (path != null && File(path).exists()) {
                 val statusLabel = when (check.status) {
                     "OK" -> "OK"
                     "ATENCAO" -> "ATENÇÃO"
                     "DEFEITO" -> "DEFEITO / FORA DO AR"
                     else -> check.status
                 }
-                paint.color = if (check.status == "DEFEITO") redError else orangeWarn
-                paint.textSize = 9f
-                canvas2.drawText("STATUS: $statusLabel", xPos + 10f, currentY + 248f, paint)
+                annexPhotos.add(
+                    AnnexPhoto(
+                        title = "${item.emoji} ${item.title}",
+                        subtitle = "STATUS: $statusLabel",
+                        description = if (check.observation.isNotBlank()) "Obs: ${check.observation}" else "Sem observações adicionais",
+                        path = path,
+                        isError = check.status == "DEFEITO"
+                    )
+                )
+            }
+        }
 
-                paint.color = textDark
-                paint.isFakeBoldText = false
-                paint.textSize = 9f
-                val obsText = if (check.observation.isNotBlank()) "Obs: ${check.observation}" else "Sem observações adicionais"
-                canvas2.drawText(obsText.take(35), xPos + 10f, currentY + 266f, paint)
-                if (obsText.length > 35) {
-                    canvas2.drawText(obsText.substring(35).take(35), xPos + 10f, currentY + 280f, paint)
+        obsAttachments.filter { it.type == com.example.data.model.AttachmentType.PHOTO && File(it.filePath).exists() }
+            .forEach { att ->
+                annexPhotos.add(
+                    AnnexPhoto(
+                        title = "📎 ${att.displayName}",
+                        subtitle = "ANEXO DA OBSERVAÇÃO",
+                        description = "Fotografia vinculada ao registro",
+                        path = att.filePath,
+                        isError = false
+                    )
+                )
+            }
+
+        if (annexPhotos.isNotEmpty()) {
+            val totalAnnexPages = (annexPhotos.size + 3) / 4
+            annexPhotos.chunked(4).forEachIndexed { chunkIdx, chunk ->
+                val pageNum = chunkIdx + 2
+                val page2Info = PdfDocument.PageInfo.Builder(595, 842, pageNum).create()
+                val page2 = pdfDocument.startPage(page2Info)
+                val canvas2: Canvas = page2.canvas
+
+                paint.color = navyBg
+                canvas2.drawRect(0f, 0f, 595f, 65f, paint)
+                paint.color = goldPrimary
+                canvas2.drawRect(0f, 63f, 595f, 65f, paint)
+
+                paint.color = Color.WHITE
+                paint.textSize = 14f
+                paint.isFakeBoldText = true
+                canvas2.drawText("BPS FACILITIES", 25f, 28f, paint)
+
+                paint.color = goldLight
+                paint.textSize = 10f
+                canvas2.drawText("ANEXO FOTOGRÁFICO DE IRREGULARIDADES E OBSERVAÇÕES", 25f, 48f, paint)
+
+                chunk.forEachIndexed { idx, photo ->
+                    val xPos = if (idx % 2 == 0) 25f else 305f
+                    val currentY = if (idx < 2) 85f else 430f
+
+                    paint.color = cardBg
+                    val cardRect = RectF(xPos, currentY, xPos + 265f, currentY + 325f)
+                    canvas2.drawRoundRect(cardRect, 8f, 8f, paint)
+                    paint.color = lineGray
+                    paint.style = Paint.Style.STROKE
+                    canvas2.drawRoundRect(cardRect, 8f, 8f, paint)
+                    paint.style = Paint.Style.FILL
+
+                    try {
+                        val rawBitmap = BitmapFactory.decodeFile(photo.path)
+                        if (rawBitmap != null) {
+                            val boxRect = RectF(xPos + 10f, currentY + 10f, xPos + 255f, currentY + 210f)
+                            val scale = minOf(boxRect.width() / rawBitmap.width, boxRect.height() / rawBitmap.height)
+                            val dw = rawBitmap.width * scale
+                            val dh = rawBitmap.height * scale
+                            val left = boxRect.left + (boxRect.width() - dw) / 2f
+                            val top = boxRect.top + (boxRect.height() - dh) / 2f
+                            canvas2.drawBitmap(rawBitmap, null, RectF(left, top, left + dw, top + dh), paint)
+                            rawBitmap.recycle()
+                        }
+                    } catch (_: Exception) {}
+
+                    paint.color = textDark
+                    paint.textSize = 10.5f
+                    paint.isFakeBoldText = true
+                    canvas2.drawText(photo.title.take(28), xPos + 10f, currentY + 230f, paint)
+
+                    paint.color = if (photo.isError) redError else orangeWarn
+                    paint.textSize = 9f
+                    canvas2.drawText(photo.subtitle, xPos + 10f, currentY + 248f, paint)
+
+                    paint.color = textDark
+                    paint.isFakeBoldText = false
+                    paint.textSize = 9f
+                    canvas2.drawText(photo.description.take(35), xPos + 10f, currentY + 266f, paint)
+                    if (photo.description.length > 35) {
+                        canvas2.drawText(photo.description.substring(35).take(35), xPos + 10f, currentY + 280f, paint)
+                    }
+
+                    paint.color = textMuted
+                    paint.textSize = 8f
+                    canvas2.drawText("Evidência registrada no posto", xPos + 10f, currentY + 305f, paint)
                 }
 
                 paint.color = textMuted
                 paint.textSize = 8f
-                canvas2.drawText("Evidência registrada no posto", xPos + 10f, currentY + 305f, paint)
+                paint.isFakeBoldText = false
+                canvas2.drawText("BPS Facilities - Anexo Fotográfico Oficial | Página $pageNum/${totalAnnexPages + 1}", 170f, 815f, paint)
+
+                pdfDocument.finishPage(page2)
             }
-
-            // Footer on page 2
-            paint.color = textMuted
-            paint.textSize = 8f
-            paint.isFakeBoldText = false
-            canvas2.drawText("BPS Facilities - Anexo Fotográfico Oficial | Página 2/2", 180f, 810f, paint)
-
-            pdfDocument.finishPage(page2)
         }
 
-        // Write to file
-        val outputDir = File(context.cacheDir, "reports")
+        // Write to file in persistent directory
+        val outputDir = File(context.filesDir, "generated_pdfs")
         if (!outputDir.exists()) outputDir.mkdirs()
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())

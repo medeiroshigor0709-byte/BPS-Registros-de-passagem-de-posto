@@ -75,7 +75,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.AttachmentType
 import com.example.data.model.ChecklistTemplateItem
+import com.example.ui.components.CameraMonitoringCard
+import com.example.ui.components.ObservationAttachmentsSection
+import com.example.ui.components.PdfViewerDialog
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
 import com.example.ui.theme.BpsGoldLight
@@ -97,10 +101,12 @@ fun ShiftHandoverScreen(
     val formState by viewModel.formState.collectAsStateWithLifecycle()
     val employees by viewModel.employees.collectAsStateWithLifecycle()
     val templateItems by viewModel.templateItems.collectAsStateWithLifecycle()
+    val attachmentFeedback by viewModel.attachmentFeedback.collectAsStateWithLifecycle()
 
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingReports by viewModel.pendingReports.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+    var generatedPdfPreview by remember { mutableStateOf<File?>(null) }
 
     val activeItems = remember(templateItems) {
         templateItems.filter { it.isEnabled }.sortedBy { it.orderIndex }
@@ -404,15 +410,18 @@ fun ShiftHandoverScreen(
         // Iterate through active items
         items(activeItems, key = { it.id }) { item ->
             if (item.isCamerasItem) {
-                // Specialized Camera CFTV Card
-                CamerasChecklistCard(
+                // Specialized 32-Camera CFTV Monitoring Card (Monitor 1: 16 + Monitor 2: 16)
+                CameraMonitoringCard(
                     item = item,
-                    workingCount = formState.camerasWorkingCount,
-                    mon1 = formState.monitor1Details,
-                    mon2 = formState.monitor2Details,
-                    onUpdate = { wc, m1, m2 ->
-                        viewModel.updateCamerasInfo(wc, m1, m2)
-                    }
+                    cameraState = formState.cameraMonitoring,
+                    onSetCameraStatus = { monitorNum, camNum, status ->
+                        viewModel.setCameraStatus(monitorNum, camNum, status)
+                    },
+                    onSetAllMonitorCameras = { monitorNum, status ->
+                        viewModel.setAllMonitorCameras(monitorNum, status)
+                    },
+                    onApplyAllWorking = { viewModel.applyAllCamerasWorking() },
+                    onApplyDefaultBpsPreset = { viewModel.applyDefaultBpsCameraPreset() }
                 )
             } else {
                 StandardChecklistItemCard(
@@ -437,7 +446,7 @@ fun ShiftHandoverScreen(
             }
         }
 
-        // 4. General Observations & Notes
+        // 4. General Observations & Notes + Persistent Attachments (Photos & PDFs)
         item {
             Card(
                 modifier = Modifier
@@ -464,6 +473,26 @@ fun ShiftHandoverScreen(
                             .testTag("general_notes_input"),
                         minLines = 2,
                         maxLines = 4
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ObservationAttachmentsSection(
+                        attachments = formState.observationAttachments,
+                        onAddPhotos = { uris ->
+                            viewModel.attachObservationFiles(context, uris, AttachmentType.PHOTO)
+                        },
+                        onAddPdfs = { uris ->
+                            viewModel.attachObservationFiles(context, uris, AttachmentType.PDF)
+                        },
+                        onRemoveAttachment = { att ->
+                            viewModel.removeDraftAttachment(context, att)
+                        },
+                        feedback = attachmentFeedback,
+                        onDismissFeedback = { viewModel.clearAttachmentFeedback() },
+                        testTagPrefix = "obs"
                     )
                 }
             }
@@ -783,7 +812,7 @@ fun ShiftHandoverScreen(
 
                             OutlinedButton(
                                 onClick = {
-                                    viewModel.exportAndViewPdf(context, activeItems)
+                                    generatedPdfPreview = viewModel.generateShiftPdfFile(context, activeItems)
                                 },
                                 modifier = Modifier
                                     .weight(0.7f)
@@ -808,6 +837,14 @@ fun ShiftHandoverScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    generatedPdfPreview?.let { pdfFile ->
+        PdfViewerDialog(
+            pdfFile = pdfFile,
+            title = "Relatório de Passagem - BPS Facilities",
+            onDismiss = { generatedPdfPreview = null }
+        )
     }
 }
 
@@ -1191,127 +1228,3 @@ fun StandardChecklistItemCard(
     }
 }
 
-@Composable
-fun CamerasChecklistCard(
-    item: ChecklistTemplateItem,
-    workingCount: String,
-    mon1: String,
-    mon2: String,
-    onUpdate: (String, String, String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("cameras_cftv_card"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.5f))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(text = item.emoji, fontSize = 20.sp)
-                    }
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "CFTV & Monitoramento de Câmeras",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Status de funcionamento e câmeras fora do ar",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Presets for quick selection
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        onUpdate(
-                            "28 funcionando",
-                            "1 Câmera 15 fora do ar",
-                            "2 Câmeras 11,15 e 16 fora do ar"
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                ) {
-                    Text("Padrão BPS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        onUpdate(
-                            "Todas 32 funcionando",
-                            "1 Todas operantes",
-                            "2 Todas operantes"
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                ) {
-                    Text("Todas 100% OK", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = workingCount,
-                onValueChange = { onUpdate(it, mon1, mon2) },
-                label = { Text("Total de Câmeras Funcionando") },
-                placeholder = { Text("Ex: 28 funcionando") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("cameras_working_input"),
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = mon1,
-                onValueChange = { onUpdate(workingCount, it, mon2) },
-                label = { Text("Monitor 1") },
-                placeholder = { Text("Ex: 1 Câmera 15 fora do ar") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("monitor_1_input"),
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = mon2,
-                onValueChange = { onUpdate(workingCount, mon1, it) },
-                label = { Text("Monitor 2") },
-                placeholder = { Text("Ex: 2 Câmeras 11,15 e 16 fora do ar") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("monitor_2_input"),
-                singleLine = true
-            )
-        }
-    }
-}

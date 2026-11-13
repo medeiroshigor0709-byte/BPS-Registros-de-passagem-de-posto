@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +43,7 @@ enum class BpsNavTab(
     val headerSubtitle: String
 ) {
     SHIFT_HANDOVER("Passagem", Icons.Default.AssignmentTurnedIn, "Registro de Passagem de Posto"),
+    IMAGE_TO_PDF("Img/PDF", Icons.Default.PictureAsPdf, "Conversor de Imagens para PDF"),
     CUSTOM_TEMPLATE("Modelo", Icons.Default.Tune, "Personalização do Modelo de Checklist"),
     EMPLOYEES("Equipe", Icons.Default.Badge, "Cadastro e Gestão de Colaboradores"),
     HISTORY("Histórico", Icons.Default.History, "Histórico de Registros de Posto")
@@ -109,7 +112,9 @@ fun MainAppScreen(
                         label = {
                             Text(
                                 text = tab.title,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) BpsGoldLight else Color(0xFF94A3B8)
                             )
@@ -130,6 +135,7 @@ fun MainAppScreen(
         ) {
             when (selectedTab) {
                 BpsNavTab.SHIFT_HANDOVER -> ShiftHandoverScreen(viewModel = viewModel)
+                BpsNavTab.IMAGE_TO_PDF -> ImageToPdfScreen(viewModel = viewModel)
                 BpsNavTab.CUSTOM_TEMPLATE -> TemplateSettingsScreen(viewModel = viewModel)
                 BpsNavTab.EMPLOYEES -> EmployeeManagementScreen(viewModel = viewModel)
                 BpsNavTab.HISTORY -> HistoryScreen(viewModel = viewModel)

@@ -21,5 +21,7 @@ data class ShiftReport(
     val syncStatus: String = "ENVIADO", // "PENDENTE", "ENVIADO", "RASCUNHO"
     val syncedAt: Long? = null,
     val hasPhotos: Boolean = false,
-    val photoCount: Int = 0
+    val photoCount: Int = 0,
+    val cameraStatesJson: String = "",
+    val attachmentCount: Int = 0
 )

@@ -35,6 +35,15 @@ interface ShiftReportDao {
     @Query("UPDATE shift_reports SET isPendingSync = 0, syncStatus = 'ENVIADO', syncedAt = :syncedAt WHERE isPendingSync = 1")
     suspend fun markAllAsSynced(syncedAt: Long)
 
+    @Query("SELECT * FROM shift_reports WHERE id = :id LIMIT 1")
+    suspend fun getReportById(id: Long): ShiftReport?
+
+    @Query("UPDATE shift_reports SET generalNotes = :generalNotes, attachmentCount = :attachmentCount WHERE id = :id")
+    suspend fun updateNotesAndAttachmentCount(id: Long, generalNotes: String, attachmentCount: Int)
+
+    @Query("UPDATE shift_reports SET attachmentCount = :attachmentCount WHERE id = :id")
+    suspend fun updateAttachmentCount(id: Long, attachmentCount: Int)
+
     @Delete
     suspend fun deleteReport(report: ShiftReport)
 

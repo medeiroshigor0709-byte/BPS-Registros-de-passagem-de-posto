@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ShiftAttachment
+import com.example.data.model.ShiftCameraRecord
 import com.example.data.model.ShiftDraft
 import com.example.data.model.ShiftReport
 import kotlinx.coroutines.CoroutineScope
@@ -18,9 +21,11 @@ import kotlinx.coroutines.launch
         Employee::class,
         ChecklistTemplateItem::class,
         ShiftReport::class,
-        ShiftDraft::class
+        ShiftDraft::class,
+        ShiftAttachment::class,
+        ShiftCameraRecord::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,10 +33,54 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun checklistTemplateDao(): ChecklistTemplateDao
     abstract fun shiftReportDao(): ShiftReportDao
     abstract fun shiftDraftDao(): ShiftDraftDao
+    abstract fun shiftAttachmentDao(): ShiftAttachmentDao
+    abstract fun shiftCameraRecordDao(): ShiftCameraRecordDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE shift_reports ADD COLUMN cameraStatesJson TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE shift_reports ADD COLUMN attachmentCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE shift_drafts ADD COLUMN cameraStatesJson TEXT NOT NULL DEFAULT ''")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `shift_attachments` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `reportId` INTEGER,
+                        `type` TEXT NOT NULL,
+                        `displayName` TEXT NOT NULL,
+                        `filePath` TEXT NOT NULL,
+                        `mimeType` TEXT NOT NULL,
+                        `sizeBytes` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`reportId`) REFERENCES `shift_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shift_attachments_reportId` ON `shift_attachments` (`reportId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shift_attachments_sha256` ON `shift_attachments` (`sha256`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `shift_camera_records` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `reportId` INTEGER NOT NULL,
+                        `monitorNumber` INTEGER NOT NULL,
+                        `cameraNumber` INTEGER NOT NULL,
+                        `isWorking` INTEGER NOT NULL,
+                        `recordedAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`reportId`) REFERENCES `shift_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shift_camera_records_reportId` ON `shift_camera_records` (`reportId`)")
+            }
+        }
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -40,8 +89,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "bps_facilities_database"
                 )
+                    .addMigrations(MIGRATION_2_3)
                     .addCallback(DatabaseCallback())
-                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

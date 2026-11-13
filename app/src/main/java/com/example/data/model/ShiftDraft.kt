@@ -15,5 +15,6 @@ data class ShiftDraft(
     val cameraWorkingCount: String = "28 funcionando",
     val monitor1Details: String = "1 Câmera 15 fora do ar",
     val monitor2Details: String = "2 Câmeras 11,15 e 16 fora do ar",
-    val generalNotes: String = ""
+    val generalNotes: String = "",
+    val cameraStatesJson: String = ""
 )
