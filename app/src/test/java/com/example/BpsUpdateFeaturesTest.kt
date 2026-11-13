@@ -8,11 +8,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.core.content.FileProvider
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -25,10 +32,14 @@ import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.ShiftAttachment
 import com.example.data.model.ShiftReport
 import com.example.data.repository.BpsRepository
+import com.example.ui.components.BpsHeader
 import com.example.ui.components.CameraMonitoringCard
+import com.example.ui.screens.MainAppScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.viewmodel.BpsViewModel
 import com.example.util.AttachmentStorageManager
 import com.example.util.ImageToPdfConverter
+import com.example.util.NetworkMonitor
 import com.example.util.PdfReportGenerator
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -540,5 +551,96 @@ class BpsUpdateFeaturesTest {
 
         migratedDb.close()
         dbFile.delete()
+    }
+
+    // 15. Safe Area: BpsHeader starts strictly below Android status bar insets
+    @Test
+    fun `test 15 - BpsHeader respects Android statusBar top inset without overlap`() {
+        var topInsetDp = 0f
+        var hostView: android.view.View? = null
+
+        composeTestRule.setContent {
+            hostView = LocalView.current
+            topInsetDp = with(LocalDensity.current) { 120.toDp().value }
+            MyApplicationTheme(darkTheme = true) {
+                BpsHeader(subtitle = "Registro de Passagem de Posto", isOnline = true)
+            }
+        }
+
+        composeTestRule.runOnIdle {
+            val view = hostView!!
+            val insets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.statusBars(), Insets.of(0, 120, 0, 0))
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(view, insets)
+        }
+        composeTestRule.waitForIdle()
+
+        val headerCardBounds = composeTestRule.onNodeWithTag("bps_header_card").getBoundsInRoot()
+        val headerContentBounds = composeTestRule.onNodeWithTag("bps_header_content_row").getBoundsInRoot()
+
+        assertEquals(0f, headerCardBounds.top.value, 0.5f)
+        assertTrue(
+            "Header content (${headerContentBounds.top.value}dp) must start below status bar (${topInsetDp}dp)",
+            headerContentBounds.top.value >= topInsetDp
+        )
+    }
+
+    // 16. Safe Area + All 5 Navigation Tabs: header below status bar and bottom bar above 3-button nav bar
+    @Test
+    fun `test 16 - MainAppScreen respects top and bottom safe areas across all 5 tabs`() {
+        val networkMonitor = NetworkMonitor(context)
+        val viewModel = BpsViewModel(repository, networkMonitor)
+        var statusTopDp = 0f
+        var navBottomDp = 0f
+        var hostView: android.view.View? = null
+
+        composeTestRule.setContent {
+            hostView = LocalView.current
+            with(LocalDensity.current) {
+                statusTopDp = 96.toDp().value
+                navBottomDp = 128.toDp().value
+            }
+            MyApplicationTheme(darkTheme = true) {
+                MainAppScreen(viewModel = viewModel)
+            }
+        }
+
+        composeTestRule.runOnIdle {
+            val view = hostView!!
+            val insets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.statusBars(), Insets.of(0, 96, 0, 0))
+                .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, 0, 128))
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(view, insets)
+        }
+        composeTestRule.waitForIdle()
+
+        val rootBounds = composeTestRule.onRoot().getBoundsInRoot()
+        val headerContentBounds = composeTestRule.onNodeWithTag("bps_header_content_row").getBoundsInRoot()
+        val firstTabBounds = composeTestRule.onNodeWithTag("nav_tab_shift_handover").getBoundsInRoot()
+
+        assertTrue(
+            "Header content (${headerContentBounds.top.value}dp) must clear status bar (${statusTopDp}dp)",
+            headerContentBounds.top.value >= statusTopDp
+        )
+        assertTrue(
+            "Bottom nav item (${firstTabBounds.bottom.value}dp) must sit above nav bar (${rootBounds.bottom.value - navBottomDp}dp)",
+            firstTabBounds.bottom.value <= (rootBounds.bottom.value - navBottomDp + 1f)
+        )
+
+        // Switch across all 5 tabs and confirm UI renders cleanly
+        listOf(
+            "nav_tab_image_to_pdf",
+            "nav_tab_custom_template",
+            "nav_tab_employees",
+            "nav_tab_history",
+            "nav_tab_shift_handover"
+        ).forEach { tag ->
+            composeTestRule.onNodeWithTag(tag).performClick()
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("bps_header_card").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("bps_bottom_navigation").assertIsDisplayed()
+        }
     }
 }

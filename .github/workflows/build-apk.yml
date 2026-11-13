@@ -99,29 +99,25 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Definir versão do aplicativo
+      - name: Definir versão automática do aplicativo
         id: version
         shell: bash
         run: |
+          RUN_NUMBER="${GITHUB_RUN_NUMBER:-1}"
+          VERSION_CODE="$((1 + RUN_NUMBER))"
+
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             RAW_TAG="${GITHUB_REF#refs/tags/}"
             VERSION_NAME="${RAW_TAG#v}"
-            if [[ "$VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
-              MAJOR="${BASH_REMATCH[1]}"
-              MINOR="${BASH_REMATCH[2]}"
-              PATCH="${BASH_REMATCH[3]}"
-              VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-            else
-              VERSION_CODE="${GITHUB_RUN_NUMBER:-1}"
-            fi
-            echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
-            echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
-            echo "gradle_args=-PappVersionName=${VERSION_NAME} -PappVersionCode=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
           else
-            echo "version_name=1.0.0" >> "$GITHUB_OUTPUT"
-            echo "version_code=1" >> "$GITHUB_OUTPUT"
-            echo "gradle_args=" >> "$GITHUB_OUTPUT"
+            VERSION_NAME="1.0.${RUN_NUMBER}"
           fi
+
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "run_number=${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "gradle_args=-PappVersionName=${VERSION_NAME} -PappVersionCode=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "Versão automática configurada: versionName=${VERSION_NAME}, versionCode=${VERSION_CODE} (Execução #${RUN_NUMBER})"
 
       - name: Executar testes unitários e Robolectric
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
@@ -246,8 +242,9 @@ jobs:
             echo "| Campo | Valor |"
             echo "| --- | --- |"
             echo "| **Status do Job** | ${{ job.status }} |"
+            echo "| **Execução Actions** | #${{ steps.version.outputs.run_number }} |"
             echo "| **Application ID** | \`com.aistudio.bpsfacilities.vjkr\` |"
-            echo "| **Versão** | \`${{ steps.version.outputs.version_name }}\` (code \`${{ steps.version.outputs.version_code }}\`) |"
+            echo "| **Versão** | \`${{ steps.version.outputs.version_name }}\` (versionCode \`${{ steps.version.outputs.version_code }}\`) |"
             echo "| **Arquivo** | \`Passagem-de-Ponto.apk\` |"
             echo "| **Artifact** | \`APK-Passagem-de-Ponto\` (retenção de 30 dias) |"
             echo "| **Tamanho** | \`${{ steps.package_apk.outputs.size }}\` |"
@@ -255,9 +252,9 @@ jobs:
             echo "| **Assinatura** | \`${{ steps.signing.outputs.mode }}\` |"
             echo ""
             if [ "${{ steps.signing.outputs.mode }}" = "ephemeral-test" ]; then
-              echo "> **Aviso:** O APK foi assinado com uma chave temporária de teste porque os GitHub Secrets de assinatura ainda não estão configurados."
+              echo "> **Aviso:** O APK foi assinado com chave temporária de teste porque os GitHub Secrets de assinatura ainda não estão configurados. Para permitir atualizações futuras sobre versões instaladas sem erro de assinatura, configure \`ANDROID_KEYSTORE_BASE64\`, \`ANDROID_KEYSTORE_PASSWORD\` e \`ANDROID_KEY_PASSWORD\`."
             else
-              echo "> **Assinatura de Produção:** O APK foi assinado utilizando a keystore configurada nos GitHub Secrets."
+              echo "> **Assinatura Permanente:** O APK foi assinado utilizando a keystore configurada nos GitHub Secrets."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -285,7 +282,7 @@ jobs:
           fi
           ls -lh release-assets/Passagem-de-Ponto.apk
 
-      - name: Criar ou atualizar Release sem duplicação
+      - name: Publicar nova Release sem sobrescrever versões anteriores
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -294,21 +291,21 @@ jobs:
           SIGNING_MODE: ${{ needs.build.outputs.signing_mode }}
         run: |
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            echo "Release ${TAG_NAME} já existe; atualizando apenas o anexo Passagem-de-Ponto.apk sem criar duplicata."
-            gh release upload "$TAG_NAME" "release-assets/Passagem-de-Ponto.apk" --clobber
-          else
-            NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
-            {
-              echo "## BPS Facilities — Passagem de Posto (${TAG_NAME})"
-              echo ""
-              echo "- **Arquivo:** \`Passagem-de-Ponto.apk\`"
-              echo "- **Application ID:** \`com.aistudio.bpsfacilities.vjkr\`"
-              echo "- **SHA-256:** \`${APK_SHA256}\`"
-              echo "- **Modo de assinatura:** \`${SIGNING_MODE}\`"
-            } > "$NOTES_FILE"
-
-            gh release create "$TAG_NAME" "release-assets/Passagem-de-Ponto.apk" \
-              --title "BPS Facilities ${TAG_NAME}" \
-              --notes-file "$NOTES_FILE" \
-              --verify-tag
+            echo "Release ${TAG_NAME} já existe e foi preservada sem sobrescrita. Crie uma nova tag (ex.: v1.0.1) para publicar uma nova versão."
+            exit 0
           fi
+
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "## BPS Facilities — Passagem de Posto (${TAG_NAME})"
+            echo ""
+            echo "- **Arquivo:** \`Passagem-de-Ponto.apk\`"
+            echo "- **Application ID:** \`com.aistudio.bpsfacilities.vjkr\`"
+            echo "- **SHA-256:** \`${APK_SHA256}\`"
+            echo "- **Modo de assinatura:** \`${SIGNING_MODE}\`"
+          } > "$NOTES_FILE"
+
+          gh release create "$TAG_NAME" "release-assets/Passagem-de-Ponto.apk" \
+            --title "BPS Facilities ${TAG_NAME}" \
+            --notes-file "$NOTES_FILE" \
+            --verify-tag

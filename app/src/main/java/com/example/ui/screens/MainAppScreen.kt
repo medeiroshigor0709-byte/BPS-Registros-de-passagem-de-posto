@@ -2,9 +2,17 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.Badge
@@ -12,7 +20,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -32,7 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.BpsHeader
-import com.example.ui.theme.BpsDarkSurface
+import com.example.ui.theme.BpsDarkBg
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldLight
 import com.example.ui.viewmodel.BpsViewModel
@@ -66,6 +73,8 @@ fun MainAppScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = BpsDarkBg,
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             BpsHeader(
                 subtitle = selectedTab.headerSubtitle,
@@ -76,6 +85,9 @@ fun MainAppScreen(
             NavigationBar(
                 containerColor = Color(0xFF070B14),
                 tonalElevation = 8.dp,
+                windowInsets = WindowInsets.navigationBars
+                    .union(WindowInsets.displayCutout)
+                    .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
                 modifier = Modifier.testTag("bps_bottom_navigation")
             ) {
                 BpsNavTab.values().forEach { tab ->
@@ -132,6 +144,8 @@ fun MainAppScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
         ) {
             when (selectedTab) {
                 BpsNavTab.SHIFT_HANDOVER -> ShiftHandoverScreen(viewModel = viewModel)
