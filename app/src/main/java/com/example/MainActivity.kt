@@ -21,7 +21,7 @@ import com.example.ui.viewmodel.BpsViewModelFactory
 class MainActivity : ComponentActivity() {
 
     private val database by lazy { AppDatabase.getDatabase(applicationContext) }
-    private val repository by lazy { BpsRepository(database) }
+    private val repository by lazy { BpsRepository(database = database, appContext = applicationContext) }
     private val networkMonitor by lazy { com.example.util.NetworkMonitor(applicationContext) }
     private val viewModel by viewModels<BpsViewModel> { BpsViewModelFactory(repository, networkMonitor) }
 

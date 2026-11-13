@@ -100,6 +100,36 @@ fun TemplateSettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(10.dp))
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("active_template_model_badge"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.55f))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "MODELO ÚNICO PADRÃO ATIVO",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BpsGold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = ChecklistTemplateItem.DEFAULT_MODEL_NAME,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "${templateItems.size} itens configurados (${templateItems.count { it.isEnabled }} ativos) • CFTV 32 câmeras integrado",
+                            fontSize = 11.sp,
+                            color = Color(0xFFCBD5E1)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
@@ -237,7 +267,7 @@ fun TemplateSettingsScreen(
             },
             title = { Text("Restaurar modelo padrão BPS?") },
             text = {
-                Text("Isso redefinirá a lista para todos os 14 itens originais (Celular, Carregador, Interfone, Livro de ocorrência, Rádio HTS, Cerca elétrica, Câmaras, Guarda chuva, Guarda Sol, Controle, Caixa d'água, Ar condicionado, Chaves, Extintor pó químico).")
+                Text("Isso redefinirá a lista para os 17 itens do modelo ${ChecklistTemplateItem.DEFAULT_MODEL_NAME} (Celular, Carregador, Interfone, Livro de ocorrência, Rádio HTS, Cerca elétrica, Câmeras, Guarda chuva, Guarda Sol, Controle, Caixa d'água, Ar condicionado, Chaves, Extintor pó químico, Portão de pedestre, Portão de entrada veículos e Portão de saída veículos).")
             },
             confirmButton = {
                 Button(

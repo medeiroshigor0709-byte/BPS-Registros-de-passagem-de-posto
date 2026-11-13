@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.AttachmentType
 import com.example.data.model.CameraChannelState
 import com.example.data.model.CameraMonitoringState
+import com.example.data.model.ChecklistSnapshotHelper
 import com.example.data.model.ShiftReport
 import com.example.ui.components.ObservationAttachmentsSection
 import com.example.ui.theme.BpsDarkBg
@@ -232,7 +233,12 @@ fun HistoryScreen(
                         },
                         onExportPdf = {
                             scope.launch {
-                                val activeItems = viewModel.templateItems.value.filter { it.isEnabled }
+                                val snapshotEntries = ChecklistSnapshotHelper.fromSnapshotJson(report.checklistSnapshotJson)
+                                val (historyItems, historyStates) = if (snapshotEntries != null) {
+                                    ChecklistSnapshotHelper.toItemsAndStates(snapshotEntries)
+                                } else {
+                                    viewModel.templateItems.value.filter { it.isEnabled } to emptyMap()
+                                }
                                 val camSnapshot = viewModel.getCameraStateForReport(report)
                                 val attachments = viewModel.getAttachmentsForReportDirect(report.id)
                                 val tempState = ShiftFormUiState(
@@ -240,6 +246,7 @@ fun HistoryScreen(
                                     postName = report.postName,
                                     receivingEmployee = report.receivingEmployee,
                                     departingEmployee = report.departingEmployee,
+                                    itemStates = historyStates,
                                     cameraMonitoring = camSnapshot,
                                     camerasWorkingCount = report.cameraWorkingCount,
                                     monitor1Details = report.monitor1Details,
@@ -247,10 +254,16 @@ fun HistoryScreen(
                                     generalNotes = report.generalNotes,
                                     observationAttachments = attachments
                                 )
+                                val validationError = PdfReportGenerator.validateForPdf(tempState)
+                                if (validationError != null) {
+                                    android.widget.Toast.makeText(context, validationError, android.widget.Toast.LENGTH_LONG).show()
+                                    return@launch
+                                }
                                 val file = PdfReportGenerator.generateShiftPdf(
                                     context = context,
                                     formState = tempState,
-                                    activeItems = activeItems
+                                    activeItems = historyItems,
+                                    reportTimestamp = report.timestamp
                                 )
                                 PdfReportGenerator.sharePdf(context, file)
                             }
@@ -576,12 +589,18 @@ private fun ShiftReportDetailDialog(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                val activeItems = viewModel.templateItems.value.filter { it.isEnabled }
+                                val snapshotEntries = ChecklistSnapshotHelper.fromSnapshotJson(report.checklistSnapshotJson)
+                                val (historyItems, historyStates) = if (snapshotEntries != null) {
+                                    ChecklistSnapshotHelper.toItemsAndStates(snapshotEntries)
+                                } else {
+                                    viewModel.templateItems.value.filter { it.isEnabled } to emptyMap()
+                                }
                                 val tempState = ShiftFormUiState(
                                     greeting = report.greeting,
                                     postName = report.postName,
                                     receivingEmployee = report.receivingEmployee,
                                     departingEmployee = report.departingEmployee,
+                                    itemStates = historyStates,
                                     cameraMonitoring = cameraSnapshot,
                                     camerasWorkingCount = report.cameraWorkingCount,
                                     monitor1Details = report.monitor1Details,
@@ -589,10 +608,16 @@ private fun ShiftReportDetailDialog(
                                     generalNotes = editableNotes,
                                     observationAttachments = attachments
                                 )
+                                val validationError = PdfReportGenerator.validateForPdf(tempState)
+                                if (validationError != null) {
+                                    android.widget.Toast.makeText(context, validationError, android.widget.Toast.LENGTH_LONG).show()
+                                    return@OutlinedButton
+                                }
                                 val file = PdfReportGenerator.generateShiftPdf(
                                     context = context,
                                     formState = tempState,
-                                    activeItems = activeItems
+                                    activeItems = historyItems,
+                                    reportTimestamp = report.timestamp
                                 )
                                 PdfReportGenerator.sharePdf(context, file)
                             },
@@ -745,7 +770,11 @@ fun HistoryReportCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "${report.greeting} passo o posto para: ${report.receivingEmployee}",
+                text = if (report.departingEmployee.isNotBlank()) {
+                    "Entrega: ${report.departingEmployee} → Assume: ${report.receivingEmployee}"
+                } else {
+                    "${report.greeting} passo o posto para: ${report.receivingEmployee}"
+                },
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = MaterialTheme.colorScheme.onSurface

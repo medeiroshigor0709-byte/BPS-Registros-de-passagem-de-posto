@@ -26,18 +26,42 @@ class BpsRepository(
     private val reportDao: ShiftReportDao = database.shiftReportDao(),
     private val draftDao: ShiftDraftDao = database.shiftDraftDao(),
     private val attachmentDao: ShiftAttachmentDao = database.shiftAttachmentDao(),
-    private val cameraRecordDao: ShiftCameraRecordDao = database.shiftCameraRecordDao()
+    private val cameraRecordDao: ShiftCameraRecordDao = database.shiftCameraRecordDao(),
+    private val appContext: Context? = null
 ) {
+    companion object {
+        private const val SEED_PREFS_NAME = "bps_default_seed_prefs"
+        private const val KEY_SEED_V4_RECONCILED = "seed_v4_portaria_reconciled"
+    }
+
     // Employees
     val allEmployees: Flow<List<Employee>> = employeeDao.getAllEmployees()
     val activeEmployees: Flow<List<Employee>> = employeeDao.getActiveEmployees()
 
+    suspend fun getAllEmployeesDirect(): List<Employee> = employeeDao.getAllEmployeesDirect()
+
     suspend fun saveEmployee(employee: Employee): Long {
-        return if (employee.id == 0L) {
-            employeeDao.insertEmployee(employee)
+        val normalizedName = employee.name.trim()
+        val existing = employeeDao.getAllEmployeesDirect()
+            .firstOrNull { it.name.trim().equals(normalizedName, ignoreCase = true) && it.id != employee.id }
+        if (existing != null && employee.id == 0L) {
+            val updated = existing.copy(
+                name = normalizedName,
+                role = employee.role,
+                shift = employee.shift,
+                phone = employee.phone,
+                badgeNumber = employee.badgeNumber,
+                isActive = employee.isActive
+            )
+            employeeDao.updateEmployee(updated)
+            return existing.id
+        }
+        val cleanEmployee = employee.copy(name = normalizedName)
+        return if (cleanEmployee.id == 0L) {
+            employeeDao.insertEmployee(cleanEmployee)
         } else {
-            employeeDao.updateEmployee(employee)
-            employee.id
+            employeeDao.updateEmployee(cleanEmployee)
+            cleanEmployee.id
         }
     }
 
@@ -47,36 +71,45 @@ class BpsRepository(
     val allTemplateItems: Flow<List<ChecklistTemplateItem>> = templateDao.getAllTemplateItems()
     val activeTemplateItems: Flow<List<ChecklistTemplateItem>> = templateDao.getActiveTemplateItems()
 
+    suspend fun getAllTemplateItemsDirect(): List<ChecklistTemplateItem> = templateDao.getAllTemplateItemsDirect()
+
     suspend fun saveTemplateItem(item: ChecklistTemplateItem): Long {
-        return if (item.id == 0L) {
-            templateDao.insertItem(item)
+        val cleanItem = item.copy(
+            title = item.title.trim(),
+            category = item.category.trim().ifBlank { "Geral" },
+            modelName = item.modelName.ifBlank { ChecklistTemplateItem.DEFAULT_MODEL_NAME }
+        )
+        return if (cleanItem.id == 0L) {
+            val existing = templateDao.getAllTemplateItemsDirect()
+                .firstOrNull { it.title.trim().equals(cleanItem.title, ignoreCase = true) }
+            if (existing != null) {
+                templateDao.updateItem(
+                    existing.copy(
+                        title = cleanItem.title,
+                        emoji = cleanItem.emoji,
+                        isRequired = cleanItem.isRequired,
+                        isCamerasItem = cleanItem.isCamerasItem,
+                        category = cleanItem.category,
+                        isEnabled = cleanItem.isEnabled
+                    )
+                )
+                existing.id
+            } else {
+                templateDao.insertItem(cleanItem)
+            }
         } else {
-            templateDao.updateItem(item)
-            item.id
+            templateDao.updateItem(cleanItem)
+            cleanItem.id
         }
     }
 
     suspend fun deleteTemplateItem(item: ChecklistTemplateItem) = templateDao.deleteItem(item)
 
     suspend fun resetTemplatesToDefault() {
-        templateDao.clearAll()
-        val defaultItems = listOf(
-            ChecklistTemplateItem(title = "Celular", emoji = "📱", isRequired = true, isCamerasItem = false, orderIndex = 0, category = "Equipamentos"),
-            ChecklistTemplateItem(title = "Carregador", emoji = "🔌", isRequired = true, isCamerasItem = false, orderIndex = 1, category = "Equipamentos"),
-            ChecklistTemplateItem(title = "Interfone", emoji = "📞", isRequired = true, isCamerasItem = false, orderIndex = 2, category = "Comunicação"),
-            ChecklistTemplateItem(title = "Livro de ocorrência", emoji = "📔", isRequired = true, isCamerasItem = false, orderIndex = 3, category = "Documentação"),
-            ChecklistTemplateItem(title = "Rádio HTS", emoji = "📻", isRequired = true, isCamerasItem = false, orderIndex = 4, category = "Comunicação"),
-            ChecklistTemplateItem(title = "Cerca elétrica", emoji = "🚧", isRequired = true, isCamerasItem = false, orderIndex = 5, category = "Segurança Perimetral"),
-            ChecklistTemplateItem(title = "Câmaras", emoji = "🎥", isRequired = true, isCamerasItem = true, orderIndex = 6, category = "CFTV & Monitoramento"),
-            ChecklistTemplateItem(title = "Guarda chuva", emoji = "☔️", isRequired = false, isCamerasItem = false, orderIndex = 7, category = "Materiais de Apoio"),
-            ChecklistTemplateItem(title = "Guarda Sol", emoji = "⛱️", isRequired = false, isCamerasItem = false, orderIndex = 8, category = "Materiais de Apoio"),
-            ChecklistTemplateItem(title = "Controle", emoji = "🕹️", isRequired = true, isCamerasItem = false, orderIndex = 9, category = "Acesso & Portões"),
-            ChecklistTemplateItem(title = "Caixa d'água", emoji = "🌊", isRequired = true, isCamerasItem = false, orderIndex = 10, category = "Instalações Prediais"),
-            ChecklistTemplateItem(title = "Ar condicionado", emoji = "💨", isRequired = true, isCamerasItem = false, orderIndex = 11, category = "Equipamentos da Portaria"),
-            ChecklistTemplateItem(title = "Chaves", emoji = "🗝️", isRequired = true, isCamerasItem = false, orderIndex = 12, category = "Acesso & Chaves"),
-            ChecklistTemplateItem(title = "Extintor pó químico", emoji = "🧯", isRequired = true, isCamerasItem = false, orderIndex = 13, category = "Prevenção & Combate")
-        )
-        templateDao.insertAll(defaultItems)
+        database.withTransaction {
+            templateDao.clearAll()
+            templateDao.insertAll(AppDatabase.defaultChecklistSeed())
+        }
     }
 
     // Reports History & Offline Sync Layer
@@ -90,7 +123,7 @@ class BpsRepository(
 
     /**
      * Atomically saves a shift handover report together with its independent 32-camera snapshot
-     * (Monitor 1: 16 cameras + Monitor 2: 16 cameras) and any linked observation attachments.
+     * (Monitor 1: 16 cameras + Monitor 2: 16 cameras), checklist items snapshot, and linked observation attachments.
      */
     suspend fun saveReportWithCamerasAndAttachments(
         report: ShiftReport,
@@ -215,8 +248,17 @@ class BpsRepository(
         attachmentDao.deleteDraftAttachments()
     }
 
-    suspend fun ensureDefaultDataSeeded() {
-        if (templateDao.getTemplateCount() == 0) {
+    suspend fun ensureDefaultDataSeeded(context: Context? = null) {
+        val effectiveContext = context ?: appContext
+        if (effectiveContext != null && database.openHelper.databaseName != null) {
+            val prefs = effectiveContext.applicationContext.getSharedPreferences(SEED_PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_SEED_V4_RECONCILED, false)) {
+                AppDatabase.populateInitialData(database)
+                prefs.edit().putBoolean(KEY_SEED_V4_RECONCILED, true).apply()
+                return
+            }
+        }
+        if (templateDao.getTemplateCount() == 0 && employeeDao.getEmployeeCount() == 0) {
             AppDatabase.populateInitialData(database)
         }
     }

@@ -11,11 +11,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface EmployeeDao {
-    @Query("SELECT * FROM employees ORDER BY name ASC")
+    @Query("SELECT * FROM employees ORDER BY name ASC, id ASC")
     fun getAllEmployees(): Flow<List<Employee>>
 
-    @Query("SELECT * FROM employees WHERE isActive = 1 ORDER BY name ASC")
+    @Query("SELECT * FROM employees ORDER BY name ASC, id ASC")
+    suspend fun getAllEmployeesDirect(): List<Employee>
+
+    @Query("SELECT * FROM employees WHERE isActive = 1 ORDER BY name ASC, id ASC")
     fun getActiveEmployees(): Flow<List<Employee>>
+
+    @Query("SELECT COUNT(*) FROM employees")
+    suspend fun getEmployeeCount(): Int
 
     @Query("SELECT * FROM employees WHERE id = :id LIMIT 1")
     suspend fun getEmployeeById(id: Long): Employee?

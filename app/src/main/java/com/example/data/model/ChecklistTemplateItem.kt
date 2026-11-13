@@ -13,5 +13,10 @@ data class ChecklistTemplateItem(
     val isCamerasItem: Boolean = false, // Special cameras/monitors inspection
     val orderIndex: Int = 0,
     val isEnabled: Boolean = true,
-    val category: String = "Geral"
-)
+    val category: String = "Geral",
+    val modelName: String = DEFAULT_MODEL_NAME
+) {
+    companion object {
+        const val DEFAULT_MODEL_NAME = "BPS FACILITIES — PORTARIA"
+    }
+}

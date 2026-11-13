@@ -11,10 +11,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChecklistTemplateDao {
-    @Query("SELECT * FROM checklist_templates ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM checklist_templates ORDER BY orderIndex ASC, id ASC")
     fun getAllTemplateItems(): Flow<List<ChecklistTemplateItem>>
 
-    @Query("SELECT * FROM checklist_templates WHERE isEnabled = 1 ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM checklist_templates ORDER BY orderIndex ASC, id ASC")
+    suspend fun getAllTemplateItemsDirect(): List<ChecklistTemplateItem>
+
+    @Query("SELECT * FROM checklist_templates WHERE isEnabled = 1 ORDER BY orderIndex ASC, id ASC")
     fun getActiveTemplateItems(): Flow<List<ChecklistTemplateItem>>
 
     @Query("SELECT COUNT(*) FROM checklist_templates")

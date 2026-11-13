@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.model.AttachmentType
 import com.example.data.model.CameraMonitoringState
 import com.example.data.model.CameraStatus
+import com.example.data.model.ChecklistSnapshotHelper
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
 import com.example.data.model.ShiftAttachment
@@ -52,7 +53,7 @@ enum class MessageFormatStyle(val label: String, val shortDesc: String) {
 data class ShiftFormUiState(
     val greeting: String = "Boa Noite",
     val postName: String = "*PORTARIA*",
-    val receivingEmployee: String = "Higor",
+    val receivingEmployee: String = "",
     val departingEmployee: String = "",
     val itemStates: Map<Long, ItemCheckState> = emptyMap(),
     val cameraMonitoring: CameraMonitoringState = CameraMonitoringState.allWorking(),
@@ -111,6 +112,9 @@ class BpsViewModel(
 
     private val _attachmentFeedback = MutableStateFlow<AttachmentFeedback?>(null)
     val attachmentFeedback: StateFlow<AttachmentFeedback?> = _attachmentFeedback.asStateFlow()
+
+    private val _pdfValidationError = MutableStateFlow<String?>(null)
+    val pdfValidationError: StateFlow<String?> = _pdfValidationError.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -172,13 +176,19 @@ class BpsViewModel(
         autosaveDraft()
     }
 
+    fun clearPdfValidationError() {
+        _pdfValidationError.value = null
+    }
+
     fun updateReceivingEmployee(name: String) {
         _formState.update { it.copy(receivingEmployee = name) }
+        _pdfValidationError.value = null
         autosaveDraft()
     }
 
     fun updateDepartingEmployee(name: String) {
         _formState.update { it.copy(departingEmployee = name) }
+        _pdfValidationError.value = null
         autosaveDraft()
     }
 
@@ -725,8 +735,16 @@ class BpsViewModel(
     fun validateRequiredItems(activeItems: List<ChecklistTemplateItem>): List<String> {
         val missing = mutableListOf<String>()
         val state = _formState.value
-        if (state.receivingEmployee.isBlank()) {
-            missing.add("Porteiro que recebe o posto")
+        val departing = state.departingEmployee.trim()
+        val receiving = state.receivingEmployee.trim()
+        if (departing.isBlank()) {
+            missing.add("Porteiro que entrega o posto")
+        }
+        if (receiving.isBlank()) {
+            missing.add("Porteiro que assume (recebe) o posto")
+        }
+        if (departing.isNotBlank() && receiving.isNotBlank() && departing.equals(receiving, ignoreCase = true)) {
+            missing.add("Porteiro que entrega e porteiro que assume não podem ser a mesma pessoa")
         }
         for (item in activeItems) {
             if (item.isEnabled && item.isRequired && !item.isCamerasItem) {
@@ -739,21 +757,40 @@ class BpsViewModel(
         return missing
     }
 
+    fun validateHandoverForPdf(activeItems: List<ChecklistTemplateItem>): String? {
+        val state = _formState.value
+        PdfReportGenerator.validateForPdf(state)?.let { return it }
+        for (item in activeItems) {
+            if (item.isEnabled && item.isRequired && !item.isCamerasItem) {
+                val check = state.itemStates[item.id]
+                if (check != null && check.status == "DEFEITO" && check.observation.isBlank()) {
+                    return "O item '${item.title}' está marcado como DEFEITO e requer observação antes de gerar o PDF."
+                }
+            }
+        }
+        return null
+    }
+
     /**
      * Saves a checklist locally in Room even without internet connection (Pending Sync),
-     * preserving its 32-camera snapshot and observation attachments independently.
+     * preserving its 32-camera snapshot, checklist items snapshot, and observation attachments independently.
      */
-    fun saveReportOffline(formattedMessage: String, context: Context) {
+    fun saveReportOffline(
+        formattedMessage: String,
+        context: Context,
+        activeItems: List<ChecklistTemplateItem> = templateItems.value
+    ) {
         viewModelScope.launch {
             val state = _formState.value
             val itemPhotosCount = state.itemStates.values.count { it.photoPath != null }
             val obsPhotosCount = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
             val totalPhotos = itemPhotosCount + obsPhotosCount
+            val checklistSnapshot = ChecklistSnapshotHelper.toSnapshotJson(activeItems, state.itemStates)
             val report = ShiftReport(
                 greeting = state.greeting,
                 postName = state.postName,
-                departingEmployee = state.departingEmployee,
-                receivingEmployee = state.receivingEmployee,
+                departingEmployee = state.departingEmployee.trim(),
+                receivingEmployee = state.receivingEmployee.trim(),
                 reportContent = formattedMessage,
                 cameraWorkingCount = state.camerasWorkingCount,
                 monitor1Details = state.monitor1Details,
@@ -762,7 +799,8 @@ class BpsViewModel(
                 isPendingSync = true,
                 syncStatus = "PENDENTE",
                 hasPhotos = totalPhotos > 0,
-                photoCount = totalPhotos
+                photoCount = totalPhotos,
+                checklistSnapshotJson = checklistSnapshot
             )
             repository.saveReportWithCamerasAndAttachments(
                 report = report,
@@ -835,17 +873,23 @@ class BpsViewModel(
         Toast.makeText(context, "Texto copiado para a área de transferência!", Toast.LENGTH_SHORT).show()
     }
 
-    fun saveCurrentReportToHistory(formattedMessage: String) {
+    fun saveCurrentReportToHistory(
+        formattedMessage: String,
+        activeItems: List<ChecklistTemplateItem> = templateItems.value,
+        customTimestamp: Long = System.currentTimeMillis()
+    ) {
         viewModelScope.launch {
             val state = _formState.value
             val itemPhotosCount = state.itemStates.values.count { it.photoPath != null }
             val obsPhotosCount = state.observationAttachments.count { it.type == AttachmentType.PHOTO }
             val totalPhotos = itemPhotosCount + obsPhotosCount
+            val checklistSnapshot = ChecklistSnapshotHelper.toSnapshotJson(activeItems, state.itemStates)
             val report = ShiftReport(
+                timestamp = customTimestamp,
                 greeting = state.greeting,
                 postName = state.postName,
-                departingEmployee = state.departingEmployee,
-                receivingEmployee = state.receivingEmployee,
+                departingEmployee = state.departingEmployee.trim(),
+                receivingEmployee = state.receivingEmployee.trim(),
                 reportContent = formattedMessage,
                 cameraWorkingCount = state.camerasWorkingCount,
                 monitor1Details = state.monitor1Details,
@@ -853,9 +897,10 @@ class BpsViewModel(
                 generalNotes = state.generalNotes,
                 isPendingSync = false,
                 syncStatus = "ENVIADO",
-                syncedAt = System.currentTimeMillis(),
+                syncedAt = customTimestamp,
                 hasPhotos = totalPhotos > 0,
-                photoCount = totalPhotos
+                photoCount = totalPhotos,
+                checklistSnapshotJson = checklistSnapshot
             )
             repository.saveReportWithCamerasAndAttachments(
                 report = report,
@@ -872,22 +917,44 @@ class BpsViewModel(
         }
     }
 
-    // PDF Export
+    // PDF Export with Mandatory Nominal Signature Validation
     fun exportAndSharePdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
+        val validationError = validateHandoverForPdf(activeItems)
+        if (validationError != null) {
+            _pdfValidationError.value = validationError
+            Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+            return
+        }
+        _pdfValidationError.value = null
         try {
+            val handoverTimestamp = System.currentTimeMillis()
             val file = PdfReportGenerator.generateShiftPdf(
                 context = context,
                 formState = _formState.value,
-                activeItems = activeItems
+                activeItems = activeItems,
+                reportTimestamp = handoverTimestamp
             )
             PdfReportGenerator.sharePdf(context, file)
-            saveCurrentReportToHistory(buildFormattedMessage(activeItems))
+            saveCurrentReportToHistory(
+                formattedMessage = buildFormattedMessage(activeItems),
+                activeItems = activeItems,
+                customTimestamp = handoverTimestamp
+            )
         } catch (e: Exception) {
-            Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            val message = e.message ?: "Erro ao gerar PDF."
+            _pdfValidationError.value = message
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
 
     fun generateShiftPdfFile(context: Context, activeItems: List<ChecklistTemplateItem>): File? {
+        val validationError = validateHandoverForPdf(activeItems)
+        if (validationError != null) {
+            _pdfValidationError.value = validationError
+            Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+            return null
+        }
+        _pdfValidationError.value = null
         return try {
             PdfReportGenerator.generateShiftPdf(
                 context = context,
@@ -895,12 +962,21 @@ class BpsViewModel(
                 activeItems = activeItems
             )
         } catch (e: Exception) {
-            Toast.makeText(context, "Erro ao gerar PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            val message = e.message ?: "Erro ao gerar PDF."
+            _pdfValidationError.value = message
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             null
         }
     }
 
     fun exportAndViewPdf(context: Context, activeItems: List<ChecklistTemplateItem>) {
+        val validationError = validateHandoverForPdf(activeItems)
+        if (validationError != null) {
+            _pdfValidationError.value = validationError
+            Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+            return
+        }
+        _pdfValidationError.value = null
         try {
             val file = PdfReportGenerator.generateShiftPdf(
                 context = context,
@@ -909,7 +985,9 @@ class BpsViewModel(
             )
             PdfReportGenerator.viewPdf(context, file)
         } catch (e: Exception) {
-            Toast.makeText(context, "Erro ao abrir PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            val message = e.message ?: "Erro ao abrir PDF."
+            _pdfValidationError.value = message
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
 

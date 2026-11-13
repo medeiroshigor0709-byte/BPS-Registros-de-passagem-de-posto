@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -102,6 +103,7 @@ fun ShiftHandoverScreen(
     val employees by viewModel.employees.collectAsStateWithLifecycle()
     val templateItems by viewModel.templateItems.collectAsStateWithLifecycle()
     val attachmentFeedback by viewModel.attachmentFeedback.collectAsStateWithLifecycle()
+    val pdfValidationError by viewModel.pdfValidationError.collectAsStateWithLifecycle()
 
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingReports by viewModel.pendingReports.collectAsStateWithLifecycle()
@@ -123,7 +125,8 @@ fun ShiftHandoverScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .testTag("shift_handover_list"),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -286,15 +289,24 @@ fun ShiftHandoverScreen(
             }
         }
 
-        // 2. Employee Assignment Card
+        // 2. Employee Assignment Card (Nominal Identification for PDF & Handover)
         item {
+            val departingTrim = formState.departingEmployee.trim()
+            val receivingTrim = formState.receivingEmployee.trim()
+            val isSamePerson = departingTrim.isNotBlank() &&
+                receivingTrim.isNotBlank() &&
+                departingTrim.equals(receivingTrim, ignoreCase = true)
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("employee_assignment_card"),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isSamePerson) StatusError.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -306,35 +318,122 @@ fun ShiftHandoverScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Porteiro que Recebe o Posto",
+                            text = "Identificação dos Porteiros (Obrigatório para PDF)",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Selecione o funcionário cadastrado ou digite o nome:",
-                        fontSize = 12.sp,
+                        text = "Os nomes informados abaixo preenchem automaticamente as assinaturas nominais no relatório PDF.",
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Quick employee chips
+                    // Porteiro que ENTREGA
+                    Text(
+                        text = "1. Porteiro que Entrega o Posto *",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = BpsGoldLight
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         employees.forEach { emp ->
-                            val isSelected = formState.receivingEmployee.equals(emp.name, ignoreCase = true)
+                            val isSelected = departingTrim.equals(emp.name.trim(), ignoreCase = true)
+                            val isAlreadyReceiving = receivingTrim.equals(emp.name.trim(), ignoreCase = true)
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { viewModel.updateReceivingEmployee(emp.name) },
-                                label = { Text(emp.name) },
+                                enabled = !isAlreadyReceiving,
+                                onClick = {
+                                    if (!isAlreadyReceiving) {
+                                        viewModel.updateDepartingEmployee(emp.name)
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        if (isAlreadyReceiving) "${emp.name} (Assumindo)" else emp.name
+                                    )
+                                },
+                                leadingIcon = if (isSelected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                } else null,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BpsGold,
+                                    selectedLabelColor = Color(0xFF1E1400)
+                                ),
+                                modifier = Modifier.testTag("departing_employee_chip_${emp.name}")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = formState.departingEmployee,
+                        onValueChange = { viewModel.updateDepartingEmployee(it) },
+                        label = { Text("Nome do Porteiro que Entrega *") },
+                        placeholder = { Text("Ex: Higor") },
+                        isError = isSamePerson,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("departing_employee_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BpsGold,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Porteiro que RECEBE / ASSUME
+                    Text(
+                        text = "2. Porteiro que Assume (Recebe) o Posto *",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = BpsGoldLight
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        employees.forEach { emp ->
+                            val isSelected = receivingTrim.equals(emp.name.trim(), ignoreCase = true)
+                            val isAlreadyDeparting = departingTrim.equals(emp.name.trim(), ignoreCase = true)
+                            FilterChip(
+                                selected = isSelected,
+                                enabled = !isAlreadyDeparting,
+                                onClick = {
+                                    if (!isAlreadyDeparting) {
+                                        viewModel.updateReceivingEmployee(emp.name)
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        if (isAlreadyDeparting) "${emp.name} (Entregando)" else emp.name
+                                    )
+                                },
                                 leadingIcon = if (isSelected) {
                                     {
                                         Icon(
@@ -353,13 +452,14 @@ fun ShiftHandoverScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = formState.receivingEmployee,
                         onValueChange = { viewModel.updateReceivingEmployee(it) },
-                        label = { Text("Nome do Porteiro que assume") },
-                        placeholder = { Text("Ex: Higor") },
+                        label = { Text("Nome do Porteiro que Assume *") },
+                        placeholder = { Text("Ex: Cláudia") },
+                        isError = isSamePerson,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("receiving_employee_input"),
@@ -370,18 +470,36 @@ fun ShiftHandoverScreen(
                         )
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = formState.departingEmployee,
-                        onValueChange = { viewModel.updateDepartingEmployee(it) },
-                        label = { Text("Porteiro que está passando o posto (Opcional)") },
-                        placeholder = { Text("Ex: Carlos Silva") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("departing_employee_input"),
-                        singleLine = true
-                    )
+                    if (isSamePerson) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = StatusError.copy(alpha = 0.16f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, StatusError.copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("same_employee_error_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = StatusError,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "O Porteiro que Entrega e o Porteiro que Assume não podem ser a mesma pessoa.",
+                                    color = Color(0xFFFCA5A5),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -677,7 +795,7 @@ fun ShiftHandoverScreen(
                     // Save report only
                     OutlinedButton(
                         onClick = {
-                            viewModel.saveCurrentReportToHistory(formattedMessage)
+                            viewModel.saveCurrentReportToHistory(formattedMessage, activeItems)
                             android.widget.Toast.makeText(context, "Registro salvo no histórico!", android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier
@@ -704,7 +822,7 @@ fun ShiftHandoverScreen(
                 // Save Offline in Room Button (for later sync/send)
                 Button(
                     onClick = {
-                        viewModel.saveReportOffline(formattedMessage, context)
+                        viewModel.saveReportOffline(formattedMessage, context, activeItems)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -770,14 +888,85 @@ fun ShiftHandoverScreen(
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "Salvar em arquivo ou enviar por E-mail e WhatsApp",
+                                    text = "Assinatura nominal automática • Salvar ou enviar",
                                     fontSize = 11.sp,
                                     color = Color(0xFFCBD5E1)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        val departingOk = formState.departingEmployee.trim()
+                        val receivingOk = formState.receivingEmployee.trim()
+                        val isNominalValid = departingOk.isNotBlank() &&
+                            receivingOk.isNotBlank() &&
+                            !departingOk.equals(receivingOk, ignoreCase = true)
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (pdfValidationError != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = StatusError.copy(alpha = 0.18f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, StatusError.copy(alpha = 0.7f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("pdf_validation_error_banner")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = StatusError,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = pdfValidationError!!,
+                                        color = Color(0xFFFCA5A5),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        } else if (isNominalValid) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = StatusOk.copy(alpha = 0.14f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, StatusOk.copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .semantics(mergeDescendants = true) {}
+                                    .testTag("pdf_nominal_preview_banner")
+                            ) {
+                                Text(
+                                    text = "Assinaturas no PDF: Entrega ($departingOk) → Assume ($receivingOk)",
+                                    color = Color(0xFF86EFAC),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Preencha quem entrega e quem assume o posto acima para liberar as assinaturas automáticas do PDF.",
+                                    color = BpsGoldLight,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),

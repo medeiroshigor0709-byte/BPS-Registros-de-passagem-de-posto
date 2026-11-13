@@ -13,9 +13,9 @@ data class ShiftReport(
     val departingEmployee: String,
     val receivingEmployee: String,
     val reportContent: String, // The exact formatted WhatsApp message
-    val cameraWorkingCount: String = "28 funcionando",
-    val monitor1Details: String = "Câmera 15 fora do ar",
-    val monitor2Details: String = "Câmeras 11,15 e 16 fora do ar",
+    val cameraWorkingCount: String = "32 funcionando",
+    val monitor1Details: String = "Todas operantes (16/16)",
+    val monitor2Details: String = "Todas operantes (16/16)",
     val generalNotes: String = "",
     val isPendingSync: Boolean = false, // True if filled offline / waiting to send
     val syncStatus: String = "ENVIADO", // "PENDENTE", "ENVIADO", "RASCUNHO"
@@ -23,5 +23,6 @@ data class ShiftReport(
     val hasPhotos: Boolean = false,
     val photoCount: Int = 0,
     val cameraStatesJson: String = "",
-    val attachmentCount: Int = 0
+    val attachmentCount: Int = 0,
+    val checklistSnapshotJson: String = ""
 )
