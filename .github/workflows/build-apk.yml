@@ -31,16 +31,19 @@ jobs:
       signing_mode: ${{ steps.signing.outputs.mode }}
 
     steps:
-      - name: Baixar código do repositório
+      # Etapa 1: Checkout do repositório
+      - name: 1. Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java (JDK 21)
+      # Etapa 2: Configurar JDK 21 (Temurin)
+      - name: 2. Configurar JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Configurar Android SDK e licenças (sdkmanager)
+      # Etapa 3: Configurar Android SDK e licenças
+      - name: 3. Configurar Android SDK e licenças (sdkmanager)
         id: android_sdk
         shell: bash
         run: |
@@ -77,14 +80,14 @@ jobs:
 
           mkdir -p "${SDK_ROOT}/licenses"
 
-          # Aceitar licenças sem usar '|| true' para não mascarar falhas reais do sdkmanager
+          # Aceitar licenças sem mascarar falhas reais do sdkmanager
           printf 'y\n%.0s' {1..100} | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses
           if [ ! -f "${SDK_ROOT}/licenses/android-sdk-license" ]; then
             echo "::error::Falha ao registrar a licença padrão android-sdk-license em ${SDK_ROOT}/licenses."
             exit 1
           fi
 
-          # Instalar somente os pacotes necessários para compileSdk 36.1, targetSdk 36 e Robolectric
+          # Instalar pacotes necessários para compileSdk 36.1, targetSdk 36 e Robolectric
           printf 'y\n%.0s' {1..100} | "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
             "platform-tools" \
             "build-tools;36.0.0" \
@@ -94,12 +97,25 @@ jobs:
           echo "Pacotes instalados no Android SDK:"
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" --list_installed
 
-      - name: Configurar Gradle 9.3.1 e cache
+      # Etapa 4: Configurar Gradle 9.3.1 e cache
+      - name: 4. Configurar Gradle 9.3.1 e cache
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      - name: Definir versão automática do aplicativo
+      # Etapa 5: Tornar gradlew executável (se existir)
+      - name: 5. Tornar gradlew executável (se existir)
+        shell: bash
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            echo "Permissão de execução concedida a ./gradlew"
+          else
+            echo "Gradle wrapper não presente no repositório; o runner utilizará o Gradle instalado."
+          fi
+
+      # Etapa 6: Gerar versão automática (versionName e versionCode)
+      - name: 6. Gerar versão automática (versionName e versionCode)
         id: version
         shell: bash
         run: |
@@ -119,7 +135,8 @@ jobs:
           echo "gradle_args=-PappVersionName=${VERSION_NAME} -PappVersionCode=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
           echo "Versão automática configurada: versionName=${VERSION_NAME}, versionCode=${VERSION_CODE} (Execução #${RUN_NUMBER})"
 
-      - name: Executar testes unitários e Robolectric (KSP + JVM)
+      # Etapa 7: Executar validação KSP e testes unitários
+      - name: 7. Executar validação KSP e testes unitários (JVM Headless)
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         shell: bash
         env:
@@ -131,7 +148,8 @@ jobs:
             gradle :app:kspDebugKotlin :app:kspDebugUnitTestKotlin :app:testDebugUnitTest --no-daemon --stacktrace
           fi
 
-      - name: Configurar assinatura Release (Secrets ou chave temporária de teste)
+      # Etapa 8: Configurar assinatura Release (keystore de produção ou temporária segura)
+      - name: 8. Configurar assinatura Release (Secrets ou chave temporária segura)
         id: signing
         shell: bash
         env:
@@ -175,7 +193,8 @@ jobs:
             echo "::warning::Secrets de assinatura não configurados (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD). Gerado APK Release assinado com chave temporária apenas para testes."
           fi
 
-      - name: Compilar APK em modo Release
+      # Etapa 9: Compilar APK Release (:app:assembleRelease)
+      - name: 9. Compilar APK Release (:app:assembleRelease)
         shell: bash
         run: |
           if [ -x ./gradlew ]; then
@@ -184,10 +203,12 @@ jobs:
             gradle :app:assembleRelease --no-daemon --stacktrace ${{ steps.version.outputs.gradle_args }}
           fi
 
-      - name: Localizar, validar assinatura e renomear APK
+      # Etapa 10, 11, 12, 13: Localizar, validar assinatura, renomear e calcular hashes
+      - name: 10-13. Localizar, validar com apksigner, renomear e calcular SHA-256
         id: package_apk
         shell: bash
         run: |
+          # Etapa 10: Localizar o APK gerado
           APK_SOURCE=""
           if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
             APK_SOURCE="app/build/outputs/apk/release/app-release.apk"
@@ -201,8 +222,10 @@ jobs:
           fi
 
           mkdir -p build-artifacts
+          # Etapa 12: Renomear para BPS-FACILITIES-Release.apk
           cp "$APK_SOURCE" "build-artifacts/BPS-FACILITIES-Release.apk"
 
+          # Etapa 11: Validar integridade e assinatura do APK com apksigner
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
           APKSIGNER_BIN=""
           if [ -n "$SDK_ROOT" ] && [ -d "$SDK_ROOT/build-tools" ]; then
@@ -210,58 +233,65 @@ jobs:
           fi
 
           if [ -n "$APKSIGNER_BIN" ]; then
-            echo "Verificando assinatura com $APKSIGNER_BIN..."
+            echo "Validando assinatura com $APKSIGNER_BIN..."
             "$APKSIGNER_BIN" verify --print-certs "build-artifacts/BPS-FACILITIES-Release.apk"
           fi
 
+          # Etapa 13: Calcular hash SHA-256 e tamanho
           APK_SIZE="$(du -h build-artifacts/BPS-FACILITIES-Release.apk | cut -f1)"
           APK_SHA256="$(sha256sum build-artifacts/BPS-FACILITIES-Release.apk | awk '{print $1}')"
           echo "size=${APK_SIZE}" >> "$GITHUB_OUTPUT"
           echo "sha256=${APK_SHA256}" >> "$GITHUB_OUTPUT"
-          echo "APK gerado: build-artifacts/BPS-FACILITIES-Release.apk (${APK_SIZE}) | SHA-256: ${APK_SHA256}"
+          echo "APK gerado com sucesso: build-artifacts/BPS-FACILITIES-Release.apk (${APK_SIZE})"
+          echo "SHA-256: ${APK_SHA256}"
 
-      - name: Publicar APK como Artifact do GitHub Actions
+      # Etapa 14: Publicar APK como Artifact (nome: BPS-FACILITIES-Release)
+      - name: 14. Publicar APK como Artifact (BPS-FACILITIES-Release)
         uses: actions/upload-artifact@v4
         with:
-          name: APK-Passagem-de-Ponto
+          name: BPS-FACILITIES-Release
           path: build-artifacts/BPS-FACILITIES-Release.apk
           retention-days: 30
           if-no-files-found: error
 
-      - name: Remover chave temporária do runner
+      # Etapa 15: Limpeza segura de credenciais e chaves do runner
+      - name: 15. Limpeza segura de credenciais e chaves do runner
         if: always()
         shell: bash
         run: |
           rm -f "${RUNNER_TEMP}/release-keystore.jks" "${RUNNER_TEMP}/test-release-keystore.jks"
+          echo "Keystores temporárias removidas com segurança do runner."
 
-      - name: Exibir resumo da compilação
+      # Etapa 16: Gerar resumo detalhado no GitHub Step Summary
+      - name: 16. Gerar resumo detalhado da compilação
         if: always()
         shell: bash
         run: |
           {
-            echo "## Resultado da Compilação Android (Release)"
+            echo "## 🛡️ BPS Facilities — Relatório de Compilação Release"
             echo ""
-            echo "| Campo | Valor |"
+            echo "| Propriedade | Valor |"
             echo "| --- | --- |"
-            echo "| **Status do Job** | ${{ job.status }} |"
-            echo "| **Execução Actions** | #${{ steps.version.outputs.run_number }} |"
-            echo "| **Application ID** | \`com.aistudio.bpsfacilities.vjkr\` |"
-            echo "| **Versão** | \`${{ steps.version.outputs.version_name }}\` (versionCode \`${{ steps.version.outputs.version_code }}\`) |"
-            echo "| **Arquivo** | \`BPS-FACILITIES-Release.apk\` |"
-            echo "| **Artifact** | \`APK-Passagem-de-Ponto\` (retenção de 30 dias) |"
-            echo "| **Tamanho** | \`${{ steps.package_apk.outputs.size }}\` |"
-            echo "| **SHA-256** | \`${{ steps.package_apk.outputs.sha256 }}\` |"
-            echo "| **Assinatura** | \`${{ steps.signing.outputs.mode }}\` |"
+            echo "| **Status da Execução** | ${{ job.status == 'success' && '✅ Sucesso' || '❌ Falha' }} |"
+            echo "| **Build Actions** | #${{ steps.version.outputs.run_number }} |"
+            echo "| **Identificador (App ID)** | \`com.aistudio.bpsfacilities.vjkr\` |"
+            echo "| **Versão do Aplicativo** | \`${{ steps.version.outputs.version_name }}\` (versionCode: \`${{ steps.version.outputs.version_code }}\`) |"
+            echo "| **Arquivo Gerado** | \`BPS-FACILITIES-Release.apk\` |"
+            echo "| **Artefato Actions** | \`BPS-FACILITIES-Release\` (armazenado por 30 dias) |"
+            echo "| **Tamanho do Arquivo** | \`${{ steps.package_apk.outputs.size }}\` |"
+            echo "| **Hash SHA-256** | \`${{ steps.package_apk.outputs.sha256 }}\` |"
+            echo "| **Modo de Assinatura** | \`${{ steps.signing.outputs.mode }}\` |"
             echo ""
             if [ "${{ steps.signing.outputs.mode }}" = "ephemeral-test" ]; then
-              echo "> **Aviso:** O APK foi assinado com chave temporária de teste porque os GitHub Secrets de assinatura ainda não estão configurados. Para permitir atualizações futuras sobre versões instaladas sem erro de assinatura, configure \`ANDROID_KEYSTORE_BASE64\`, \`ANDROID_KEYSTORE_PASSWORD\` e \`ANDROID_KEY_PASSWORD\`."
+              echo "> ⚠️ **Chave Temporária de Teste:** O APK foi assinado com keystore temporária gerada durante a compilação porque os Secrets (\`ANDROID_KEYSTORE_BASE64\`, \`ANDROID_KEYSTORE_PASSWORD\` e \`ANDROID_KEY_PASSWORD\`) ainda não foram preenchidos no repositório. Para releases finais que suportem atualizações contínuas sobre o mesmo app sem reinstalação, configure os 3 secrets no GitHub."
             else
-              echo "> **Assinatura Permanente:** O APK foi assinado utilizando a keystore configurada nos GitHub Secrets."
+              echo "> 🔒 **Assinatura de Produção:** O APK foi assinado com a keystore permanente configurada nos Secrets do repositório."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Etapa 17: Publicação automática no GitHub Releases quando tag v* for enviada
   publish-release:
-    name: Publicar APK no GitHub Releases
+    name: 17. Publicar APK no GitHub Releases
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -272,7 +302,7 @@ jobs:
       - name: Baixar Artifact do APK compilado
         uses: actions/download-artifact@v4
         with:
-          name: APK-Passagem-de-Ponto
+          name: BPS-FACILITIES-Release
           path: release-assets
 
       - name: Validar arquivo APK antes da publicação
@@ -305,6 +335,8 @@ jobs:
             echo "- **Application ID:** \`com.aistudio.bpsfacilities.vjkr\`"
             echo "- **SHA-256:** \`${APK_SHA256}\`"
             echo "- **Modo de assinatura:** \`${SIGNING_MODE}\`"
+            echo "- **Envio exclusivo de PDF pelo WhatsApp**"
+            echo "- **Assinaturas nominais automáticas integradas**"
           } > "$NOTES_FILE"
 
           gh release create "$TAG_NAME" "release-assets/BPS-FACILITIES-Release.apk" \

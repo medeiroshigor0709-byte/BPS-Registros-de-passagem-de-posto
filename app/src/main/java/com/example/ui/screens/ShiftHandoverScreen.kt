@@ -856,14 +856,14 @@ fun ShiftHandoverScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 
     generatedPdfPreview?.let { pdfFile ->
         PdfViewerDialog(
             pdfFile = pdfFile,
-            title = "Relatório de Passagem - BPS Facilities",
+            title = pdfFile.name,
             onDismiss = { generatedPdfPreview = null },
             onShareClick = {
                 generatedPdfPreview = null

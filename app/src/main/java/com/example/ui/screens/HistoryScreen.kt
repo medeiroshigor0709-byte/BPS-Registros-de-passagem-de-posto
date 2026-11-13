@@ -328,6 +328,9 @@ private fun ShiftReportDetailDialog(
     val context = LocalContext.current
     val dateFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale.forLanguageTag("pt-BR"))
     val formattedDate = dateFormat.format(Date(report.timestamp))
+    val detailPdfFileName = remember(report.postName, report.timestamp) {
+        PdfReportGenerator.buildPdfFileName(report.postName, report.timestamp)
+    }
 
     var cameraSnapshot by remember(report.id) {
         mutableStateOf(
@@ -437,6 +440,14 @@ private fun ShiftReportDetailDialog(
                                 text = "📌 Status: ${report.syncStatus}",
                                 fontSize = 12.sp,
                                 color = BpsGoldLight
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "📄 Arquivo: $detailPdfFileName",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = BpsGoldLight,
+                                modifier = Modifier.testTag("history_detail_pdf_filename")
                             )
                         }
                     }
@@ -687,6 +698,9 @@ fun HistoryReportCard(
 ) {
     val dateFormat = SimpleDateFormat("dd/MM/yyyy - HH:mm", Locale.forLanguageTag("pt-BR"))
     val formattedDate = dateFormat.format(Date(report.timestamp))
+    val standardPdfFileName = remember(report.postName, report.timestamp) {
+        PdfReportGenerator.buildPdfFileName(report.postName, report.timestamp)
+    }
     val camSnapshot = remember(report.cameraStatesJson, report.monitor1Details, report.monitor2Details) {
         CameraMonitoringState.fromSnapshotJson(report.cameraStatesJson)
             ?: CameraMonitoringState.fromLegacyStrings(report.monitor1Details, report.monitor2Details)
@@ -748,6 +762,36 @@ fun HistoryReportCard(
                 fontSize = 15.sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = Color(0xFF0F172A),
+                border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("history_pdf_filename_${report.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureAsPdf,
+                        contentDescription = null,
+                        tint = BpsGold,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = standardPdfFileName,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = BpsGoldLight
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(6.dp))
 

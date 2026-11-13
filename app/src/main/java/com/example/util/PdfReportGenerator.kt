@@ -303,6 +303,45 @@ object PdfReportGenerator {
         return actions to pageCount
     }
 
+    /**
+     * Sanitizes post name for filename: removes asterisks, special characters, converts spaces to underscores.
+     */
+    fun sanitizePostNameForFileName(rawPostName: String): String {
+        val clean = rawPostName.replace("*", "").trim().ifBlank { "PORTARIA" }
+        val normalized = Normalizer.normalize(clean, Normalizer.Form.NFD)
+            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
+            .replace(Regex("[^a-zA-Z0-9_\\-\\s]"), "")
+            .trim()
+            .replace(Regex("\\s+"), "_")
+            .take(30)
+            .ifBlank { "PORTARIA" }
+        return normalized
+    }
+
+    /**
+     * Builds standardized PDF filename: BPS_Passagem_de_Posto_[NOME_DO_POSTO]_[AAAA-MM-DD]_[HH-MM].pdf
+     * Avoids overwriting different documents created in the same minute by appending seconds if a different document exists.
+     */
+    fun buildPdfFileName(
+        rawPostName: String,
+        timestamp: Long = System.currentTimeMillis(),
+        outputDir: File? = null
+    ): String {
+        val sanitizedPost = sanitizePostNameForFileName(rawPostName)
+        val datePart = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
+        val timePart = SimpleDateFormat("HH-mm", Locale.getDefault()).format(Date(timestamp))
+        val baseName = "BPS_Passagem_de_Posto_${sanitizedPost}_${datePart}_${timePart}"
+
+        if (outputDir != null) {
+            val primaryFile = File(outputDir, "$baseName.pdf")
+            if (primaryFile.exists() && Math.abs(primaryFile.lastModified() - timestamp) > 1500L) {
+                val sec = SimpleDateFormat("ss", Locale.getDefault()).format(Date(timestamp))
+                return "${baseName}_${sec}s.pdf"
+            }
+        }
+        return "$baseName.pdf"
+    }
+
     fun generateShiftPdf(
         context: Context,
         formState: ShiftFormUiState,
@@ -318,13 +357,14 @@ object PdfReportGenerator {
         val outputDir = File(context.filesDir, "generated_pdfs")
         if (!outputDir.exists()) outputDir.mkdirs()
 
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date(reportTimestamp))
-        val pdfFile = File(outputDir, "BPS_Relatorio_Portaria_$timeStamp.pdf")
+        val fileName = buildPdfFileName(formState.postName, reportTimestamp, outputDir)
+        val pdfFile = File(outputDir, fileName)
 
         val wroteNative = tryWriteWithNativePdfDocument(context, plan, pdfFile)
         if (!wroteNative || !pdfFile.exists() || pdfFile.length() < 100L) {
             writePurePdf14TextFallback(plan, pdfFile)
         }
+        pdfFile.setLastModified(reportTimestamp)
 
         return pdfFile
     }

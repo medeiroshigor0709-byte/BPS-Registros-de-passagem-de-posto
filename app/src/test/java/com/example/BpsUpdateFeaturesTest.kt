@@ -1103,4 +1103,36 @@ class BpsUpdateFeaturesTest {
         composeTestRule.onNodeWithTag("view_pdf_button")
             .assertIsDisplayed()
     }
+
+    // 27. Validação do formato padronizado do nome do arquivo PDF
+    @Test
+    fun `test 27 - PDF filename follows BPS_Passagem_de_Posto_POSTO_AAAA-MM-DD_HH-MM format`() {
+        val sanitized = PdfReportGenerator.sanitizePostNameForFileName("*PORTARIA PRINCIPAL / BLOCO A*")
+        assertEquals("PORTARIA_PRINCIPAL_BLOCO_A", sanitized)
+
+        val cal = java.util.Calendar.getInstance()
+        cal.set(2026, java.util.Calendar.NOVEMBER, 13, 19, 30, 0)
+        val fixedTimestamp = cal.timeInMillis
+
+        val fileName = PdfReportGenerator.buildPdfFileName("*PORTARIA*", fixedTimestamp)
+        assertEquals("BPS_Passagem_de_Posto_PORTARIA_2026-11-13_19-30.pdf", fileName)
+
+        kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+        }
+        val items = kotlinx.coroutines.runBlocking {
+            repository.getAllTemplateItemsDirect().sortedBy { it.orderIndex }
+        }
+        val formState = ShiftFormUiState(
+            greeting = "Boa Noite",
+            postName = "*PORTARIA*",
+            departingEmployee = "Higor",
+            receivingEmployee = "Cláudia"
+        )
+        val pdfFile = PdfReportGenerator.generateShiftPdf(context, formState, items)
+        assertTrue(
+            "Generated file name '${pdfFile.name}' must match pattern BPS_Passagem_de_Posto_PORTARIA_YYYY-MM-DD_HH-MM.pdf",
+            pdfFile.name.matches(Regex("^BPS_Passagem_de_Posto_PORTARIA_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}\\.pdf$"))
+        )
+    }
 }
