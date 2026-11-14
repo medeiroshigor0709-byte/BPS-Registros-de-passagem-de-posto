@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.example.data.local.AppDatabase
 import com.example.data.local.ChecklistTemplateDao
 import com.example.data.local.EmployeeDao
+import com.example.data.local.ResidentNoticeDao
 import com.example.data.local.ShiftAttachmentDao
 import com.example.data.local.ShiftCameraRecordDao
 import com.example.data.local.ShiftDraftDao
@@ -12,6 +13,7 @@ import com.example.data.local.ShiftReportDao
 import com.example.data.model.CameraMonitoringState
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ResidentNotice
 import com.example.data.model.ShiftAttachment
 import com.example.data.model.ShiftCameraRecord
 import com.example.data.model.ShiftDraft
@@ -27,6 +29,7 @@ class BpsRepository(
     private val draftDao: ShiftDraftDao = database.shiftDraftDao(),
     private val attachmentDao: ShiftAttachmentDao = database.shiftAttachmentDao(),
     private val cameraRecordDao: ShiftCameraRecordDao = database.shiftCameraRecordDao(),
+    private val residentNoticeDao: ResidentNoticeDao = database.residentNoticeDao(),
     private val appContext: Context? = null
 ) {
     companion object {
@@ -262,4 +265,27 @@ class BpsRepository(
             AppDatabase.populateInitialData(database)
         }
     }
+
+    // Resident Notices (Avisos de Moradores)
+    val allResidentNotices: Flow<List<ResidentNotice>> = residentNoticeDao.getAllNotices()
+    val pendingNoticesCount: Flow<Int> = residentNoticeDao.getPendingCount()
+
+    fun getActiveNoticesForHandover(todayDate: String): Flow<List<ResidentNotice>> =
+        residentNoticeDao.getActiveNoticesForHandover(todayDate)
+
+    suspend fun getActiveNoticesForHandoverDirect(todayDate: String): List<ResidentNotice> =
+        residentNoticeDao.getActiveNoticesForHandoverDirect(todayDate)
+
+    suspend fun saveResidentNotice(notice: ResidentNotice): Long {
+        return if (notice.id == 0L) {
+            residentNoticeDao.insertNotice(notice)
+        } else {
+            residentNoticeDao.updateNotice(notice)
+            notice.id
+        }
+    }
+
+    suspend fun deleteResidentNotice(notice: ResidentNotice) = residentNoticeDao.deleteNotice(notice)
+
+    suspend fun getResidentNoticeById(id: Long): ResidentNotice? = residentNoticeDao.getNoticeById(id)
 }

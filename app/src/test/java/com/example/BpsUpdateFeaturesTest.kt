@@ -547,40 +547,38 @@ class BpsUpdateFeaturesTest {
             .assertTextContains("15 funcionando", substring = true)
     }
 
-    // 14. Room Migration 2 -> 3 preserves existing reports and employees
+    // 14. Room Migration 4 -> 5 preserves existing reports and enables resident notices
     @Test
-    fun `test 14 - Room migration 2 to 3 preserves existing data`() {
+    fun `test 14 - Room migration 4 to 5 preserves existing data`() {
         val dbName = "migration_test_${System.nanoTime()}.db"
         val dbFile = context.getDatabasePath(dbName)
         dbFile.delete()
 
-        // Create a v2 database manually with legacy schema and insert data
         val factory = FrameworkSQLiteOpenHelperFactory()
         val config = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(dbName)
-            .callback(object : SupportSQLiteOpenHelper.Callback(2) {
+            .callback(object : SupportSQLiteOpenHelper.Callback(4) {
                 override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     db.execSQL("CREATE TABLE IF NOT EXISTS `employees` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `role` TEXT NOT NULL, `shift` TEXT NOT NULL, `phone` TEXT NOT NULL, `badgeNumber` TEXT NOT NULL, `isActive` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)")
-                    db.execSQL("CREATE TABLE IF NOT EXISTS `checklist_templates` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `emoji` TEXT NOT NULL, `isRequired` INTEGER NOT NULL, `isCamerasItem` INTEGER NOT NULL, `orderIndex` INTEGER NOT NULL, `isEnabled` INTEGER NOT NULL, `category` TEXT NOT NULL)")
-                    db.execSQL("CREATE TABLE IF NOT EXISTS `shift_reports` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `greeting` TEXT NOT NULL, `postName` TEXT NOT NULL, `departingEmployee` TEXT NOT NULL, `receivingEmployee` TEXT NOT NULL, `reportContent` TEXT NOT NULL, `cameraWorkingCount` TEXT NOT NULL, `monitor1Details` TEXT NOT NULL, `monitor2Details` TEXT NOT NULL, `generalNotes` TEXT NOT NULL, `isPendingSync` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, `syncedAt` INTEGER, `hasPhotos` INTEGER NOT NULL, `photoCount` INTEGER NOT NULL)")
-                    db.execSQL("CREATE TABLE IF NOT EXISTS `shift_drafts` (`id` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `greeting` TEXT NOT NULL, `postName` TEXT NOT NULL, `receivingEmployee` TEXT NOT NULL, `departingEmployee` TEXT NOT NULL, `cameraWorkingCount` TEXT NOT NULL, `monitor1Details` TEXT NOT NULL, `monitor2Details` TEXT NOT NULL, `generalNotes` TEXT NOT NULL, PRIMARY KEY(`id`))")
-                    db.execSQL("INSERT INTO `shift_reports` (`timestamp`, `greeting`, `postName`, `departingEmployee`, `receivingEmployee`, `reportContent`, `cameraWorkingCount`, `monitor1Details`, `monitor2Details`, `generalNotes`, `isPendingSync`, `syncStatus`, `syncedAt`, `hasPhotos`, `photoCount`) VALUES (1700000000000, 'Boa Noite', '*PORTARIA*', 'Carlos', 'Higor', 'Relatório legado', '28 funcionando', '1 Câmera 15 fora do ar', '2 Câmeras 11,15 e 16 fora do ar', 'Nota antiga', 0, 'ENVIADO', NULL, 0, 0)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS `checklist_templates` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `emoji` TEXT NOT NULL, `isRequired` INTEGER NOT NULL, `isCamerasItem` INTEGER NOT NULL, `orderIndex` INTEGER NOT NULL, `isEnabled` INTEGER NOT NULL, `category` TEXT NOT NULL, `modelName` TEXT NOT NULL)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS `shift_reports` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `greeting` TEXT NOT NULL, `postName` TEXT NOT NULL, `departingEmployee` TEXT NOT NULL, `receivingEmployee` TEXT NOT NULL, `reportContent` TEXT NOT NULL, `cameraWorkingCount` TEXT NOT NULL, `monitor1Details` TEXT NOT NULL, `monitor2Details` TEXT NOT NULL, `generalNotes` TEXT NOT NULL, `isPendingSync` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, `syncedAt` INTEGER, `hasPhotos` INTEGER NOT NULL, `photoCount` INTEGER NOT NULL, `cameraStatesJson` TEXT NOT NULL, `attachmentCount` INTEGER NOT NULL, `checklistSnapshotJson` TEXT NOT NULL)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS `shift_drafts` (`id` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `greeting` TEXT NOT NULL, `postName` TEXT NOT NULL, `receivingEmployee` TEXT NOT NULL, `departingEmployee` TEXT NOT NULL, `cameraWorkingCount` TEXT NOT NULL, `monitor1Details` TEXT NOT NULL, `monitor2Details` TEXT NOT NULL, `generalNotes` TEXT NOT NULL, `cameraStatesJson` TEXT NOT NULL, PRIMARY KEY(`id`))")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS `shift_attachments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `reportId` INTEGER, `type` TEXT NOT NULL, `displayName` TEXT NOT NULL, `filePath` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `sizeBytes` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`reportId`) REFERENCES `shift_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                    db.execSQL("CREATE TABLE IF NOT EXISTS `shift_camera_records` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `reportId` INTEGER NOT NULL, `monitorNumber` INTEGER NOT NULL, `cameraNumber` INTEGER NOT NULL, `isWorking` INTEGER NOT NULL, `recordedAt` INTEGER NOT NULL, FOREIGN KEY(`reportId`) REFERENCES `shift_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                    db.execSQL("INSERT INTO `shift_reports` (`timestamp`, `greeting`, `postName`, `departingEmployee`, `receivingEmployee`, `reportContent`, `cameraWorkingCount`, `monitor1Details`, `monitor2Details`, `generalNotes`, `isPendingSync`, `syncStatus`, `syncedAt`, `hasPhotos`, `photoCount`, `cameraStatesJson`, `attachmentCount`, `checklistSnapshotJson`) VALUES (1700000000000, 'Boa Noite', '*PORTARIA*', 'Carlos', 'Higor', 'Relatório legado', '28 funcionando', '1 Câmera 15 fora do ar', '2 Câmeras 11,15 e 16 fora do ar', 'Nota antiga', 0, 'ENVIADO', NULL, 0, 0, '', 0, '')")
                 }
 
                 override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
             })
             .build()
 
-        val legacyHelper = factory.create(config)
-        legacyHelper.writableDatabase.close()
+        factory.create(config).writableDatabase.close()
 
-        // Open with Room v4 + MIGRATION_2_3 + MIGRATION_3_4
         val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 
-        // Trigger open & verify legacy record survived intact
         val cursor = migratedDb.openHelper.readableDatabase.query("SELECT receivingEmployee, generalNotes FROM shift_reports")
         assertTrue(cursor.moveToFirst())
         assertEquals("Higor", cursor.getString(0))
@@ -787,7 +785,7 @@ class BpsUpdateFeaturesTest {
         factory.create(config).writableDatabase.close()
 
         val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 
@@ -1135,4 +1133,82 @@ class BpsUpdateFeaturesTest {
             pdfFile.name.matches(Regex("^BPS_Passagem_de_Posto_PORTARIA_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}\\.pdf$"))
         )
     }
+
+    // 28. Validação da estrutura de 144 unidades para os Blocos A e B
+    @Test
+    fun `test 28 - CondoUnitsHelper has exactly 144 units per block A and B`() {
+        val blockAUnits = com.example.data.local.CondoUnitsHelper.getAllUnitIdentifiers("A")
+        val blockBUnits = com.example.data.local.CondoUnitsHelper.getAllUnitIdentifiers("B")
+
+        assertEquals(144, blockAUnits.size)
+        assertEquals(144, blockBUnits.size)
+        assertEquals("A-001", blockAUnits.first())
+        assertEquals("A-144", blockAUnits.last())
+        assertEquals("B-001", blockBUnits.first())
+        assertEquals("B-144", blockBUnits.last())
+
+        assertEquals("025", com.example.data.local.CondoUnitsHelper.parseUnitNumber("25"))
+        assertEquals("134", com.example.data.local.CondoUnitsHelper.parseUnitNumber("B-134"))
+        assertNull(com.example.data.local.CondoUnitsHelper.parseUnitNumber("999"))
+    }
+
+    // 29. CRUD e persistência offline de Avisos de Moradores
+    @Test
+    fun `test 29 - Resident notices offline persistence and PDF inclusion`() {
+        kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+        }
+        val viewModel = createTestViewModel()
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+        val notice = com.example.data.model.ResidentNotice(
+            block = "B",
+            unitNumber = "134",
+            residentName = "Karla",
+            noticeType = "VISITA_PROGRAMADA",
+            visitorName = "Carlos Eduardo",
+            visitorDocument = "12.345.678-9",
+            vehiclePlate = "ABC-1234",
+            vehicleModel = "Gol Prata",
+            scheduledDate = todayIso,
+            scheduledTime = "14:30",
+            additionalNotes = "Aguardar na portaria",
+            registeredByGuardName = "Higor",
+            status = "PENDENTE"
+        )
+
+        kotlinx.coroutines.runBlocking {
+            val id = repository.saveResidentNotice(notice)
+            assertTrue(id > 0)
+            val saved = repository.getResidentNoticeById(id)
+            assertNotNull(saved)
+            assertEquals("B-134", saved?.unitFullIdentifier)
+            assertEquals("Karla", saved?.residentName)
+            assertEquals("PENDENTE", saved?.status)
+        }
+
+        val items = kotlinx.coroutines.runBlocking {
+            repository.getAllTemplateItemsDirect().sortedBy { it.orderIndex }
+        }
+        val formState = ShiftFormUiState(
+            greeting = "Boa Noite",
+            postName = "*PORTARIA*",
+            departingEmployee = "Higor",
+            receivingEmployee = "Cláudia"
+        )
+        val activeNotices = kotlinx.coroutines.runBlocking {
+            repository.getActiveNoticesForHandoverDirect(todayIso)
+        }
+        assertEquals(1, activeNotices.size)
+
+        val pdfFile = PdfReportGenerator.generateShiftPdf(
+            context = context,
+            formState = formState,
+            activeItems = items,
+            residentNotices = activeNotices
+        )
+        assertTrue(pdfFile.exists())
+        assertTrue(pdfFile.length() > 0)
+    }
 }
+

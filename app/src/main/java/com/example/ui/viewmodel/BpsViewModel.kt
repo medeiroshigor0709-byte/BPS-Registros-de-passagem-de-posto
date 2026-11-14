@@ -15,6 +15,7 @@ import com.example.data.model.CameraStatus
 import com.example.data.model.ChecklistSnapshotHelper
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ResidentNotice
 import com.example.data.model.ShiftAttachment
 import com.example.data.model.ShiftDraft
 import com.example.data.model.ShiftReport
@@ -94,6 +95,12 @@ class BpsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val pendingCount: StateFlow<Int> = repository.pendingCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val residentNotices: StateFlow<List<ResidentNotice>> = repository.allResidentNotices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pendingNoticesCount: StateFlow<Int> = repository.pendingNoticesCount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private val _formState = MutableStateFlow(ShiftFormUiState())
@@ -854,10 +861,12 @@ class BpsViewModel(
         _pdfValidationError.value = null
         return try {
             val handoverTimestamp = System.currentTimeMillis()
+            val activeNotices = getActiveNoticesForToday()
             val file = PdfReportGenerator.generateShiftPdf(
                 context = context,
                 formState = _formState.value,
                 activeItems = activeItems,
+                residentNotices = activeNotices,
                 reportTimestamp = handoverTimestamp
             )
             val shareLaunched = PdfReportGenerator.sharePdf(context, file)
@@ -889,10 +898,12 @@ class BpsViewModel(
         }
         _pdfValidationError.value = null
         return try {
+            val activeNotices = getActiveNoticesForToday()
             PdfReportGenerator.generateShiftPdf(
                 context = context,
                 formState = _formState.value,
-                activeItems = activeItems
+                activeItems = activeItems,
+                residentNotices = activeNotices
             )
         } catch (e: Exception) {
             val message = e.message ?: "Erro ao gerar PDF."
@@ -970,6 +981,80 @@ class BpsViewModel(
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    // Resident Notices (Avisos de Moradores) Operations
+    fun getActiveNoticesForToday(): List<ResidentNotice> {
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        return residentNotices.value.filter {
+            it.status in listOf("PENDENTE", "VISUALIZADO") && it.scheduledDate >= todayIso
+        }
+    }
+
+    fun saveResidentNotice(notice: ResidentNotice, context: Context? = null) {
+        viewModelScope.launch {
+            repository.saveResidentNotice(notice)
+            context?.let {
+                Toast.makeText(it, "Aviso da unidade ${notice.unitFullIdentifier} salvo!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun deleteResidentNotice(notice: ResidentNotice, context: Context? = null) {
+        viewModelScope.launch {
+            repository.deleteResidentNotice(notice)
+            context?.let {
+                Toast.makeText(it, "Aviso excluído com sucesso!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun updateResidentNoticeStatus(noticeId: Long, newStatus: String, guardName: String, context: Context? = null) {
+        viewModelScope.launch {
+            val notice = repository.getResidentNoticeById(noticeId) ?: return@launch
+            val updated = notice.copy(
+                status = newStatus,
+                lastUpdatedByGuardName = guardName.ifBlank { notice.lastUpdatedByGuardName },
+                updatedAtTimestamp = System.currentTimeMillis()
+            )
+            repository.saveResidentNotice(updated)
+            context?.let {
+                val label = when (newStatus) {
+                    "VISUALIZADO" -> "Aviso marcado como Visualizado"
+                    "CONCLUIDO" -> "Aviso concluído e atendido!"
+                    "CANCELADO" -> "Aviso cancelado"
+                    else -> "Status atualizado: $newStatus"
+                }
+                Toast.makeText(it, label, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun duplicateResidentNotice(
+        notice: ResidentNotice,
+        newDate: String? = null,
+        guardName: String? = null,
+        context: Context? = null
+    ) {
+        viewModelScope.launch {
+            val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+            val targetDate = newDate ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(tomorrowCal.time)
+            val currentGuard = guardName ?: notice.registeredByGuardName
+
+            val duplicated = notice.copy(
+                id = 0L,
+                scheduledDate = targetDate,
+                status = "PENDENTE",
+                createdAtTimestamp = System.currentTimeMillis(),
+                registeredByGuardName = currentGuard,
+                lastUpdatedByGuardName = currentGuard,
+                updatedAtTimestamp = System.currentTimeMillis()
+            )
+            repository.saveResidentNotice(duplicated)
+            context?.let {
+                Toast.makeText(it, "Aviso duplicado com sucesso para a data $targetDate!", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 }
 

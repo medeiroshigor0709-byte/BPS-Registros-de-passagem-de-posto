@@ -19,6 +19,7 @@ import com.example.R
 import com.example.data.model.AttachmentType
 import com.example.data.model.CameraMonitoringState
 import com.example.data.model.ChecklistTemplateItem
+import com.example.data.model.ResidentNotice
 import com.example.data.model.ShiftAttachment
 import com.example.ui.viewmodel.ItemCheckState
 import com.example.ui.viewmodel.ShiftFormUiState
@@ -64,6 +65,7 @@ data class ShiftPdfDocumentPlan(
     val linkedPdfAttachments: List<ShiftAttachment>,
     val linkedPhotoAttachments: List<ShiftAttachment>,
     val annexPhotos: List<PdfAnnexPhoto>,
+    val residentNotices: List<ResidentNotice> = emptyList(),
     val mainPageCount: Int,
     val annexPageCount: Int
 ) {
@@ -90,6 +92,7 @@ object PdfReportGenerator {
         data class DrawChecklistRow(val row: PdfChecklistRow, val isStriped: Boolean) : RenderPageAction()
         data object DrawCftvCard : RenderPageAction()
         data object DrawNotesAndAttachmentsCard : RenderPageAction()
+        data object DrawResidentNoticesCard : RenderPageAction()
         data object DrawNominalSignatures : RenderPageAction()
     }
 
@@ -117,6 +120,7 @@ object PdfReportGenerator {
     fun buildPdfPlan(
         formState: ShiftFormUiState,
         activeItems: List<ChecklistTemplateItem>,
+        residentNotices: List<ResidentNotice> = emptyList(),
         reportTimestamp: Long = System.currentTimeMillis()
     ): ShiftPdfDocumentPlan {
         validateForPdf(formState)?.let { errorMsg ->
@@ -221,6 +225,7 @@ object PdfReportGenerator {
             linkedPdfAttachments = linkedPdfs,
             linkedPhotoAttachments = linkedPhotos,
             annexPhotos = annexPhotos,
+            residentNotices = residentNotices,
             mainPageCount = 1,
             annexPageCount = annexPageCount
         )
@@ -243,6 +248,12 @@ object PdfReportGenerator {
             height += plan.linkedPdfAttachments.size.coerceAtMost(5) * 11f + 4f
         }
         return height + 8f
+    }
+
+    private fun computeResidentNoticesCardHeight(plan: ShiftPdfDocumentPlan): Float {
+        if (plan.residentNotices.isEmpty()) return 0f
+        val count = plan.residentNotices.size.coerceAtMost(6)
+        return 26f + (count * 20f) + 8f
     }
 
     private fun computeCftvCardHeight(plan: ShiftPdfDocumentPlan): Float {
@@ -292,6 +303,17 @@ object PdfReportGenerator {
             }
             actions.add(RenderPageAction.DrawNotesAndAttachmentsCard)
             yPos += notesHeight + 10f
+        }
+
+        if (plan.residentNotices.isNotEmpty()) {
+            val noticesHeight = computeResidentNoticesCardHeight(plan)
+            if (yPos + noticesHeight > MAX_CONTENT_Y) {
+                pageCount++
+                actions.add(RenderPageAction.StartContinuationPage(showTableHeader = false))
+                yPos = 74f
+            }
+            actions.add(RenderPageAction.DrawResidentNoticesCard)
+            yPos += noticesHeight + 10f
         }
 
         if (yPos + SIGNATURE_BLOCK_HEIGHT > MAX_CONTENT_Y) {
@@ -346,11 +368,13 @@ object PdfReportGenerator {
         context: Context,
         formState: ShiftFormUiState,
         activeItems: List<ChecklistTemplateItem>,
+        residentNotices: List<ResidentNotice> = emptyList(),
         reportTimestamp: Long = System.currentTimeMillis()
     ): File {
         val plan = buildPdfPlan(
             formState = formState,
             activeItems = activeItems,
+            residentNotices = residentNotices,
             reportTimestamp = reportTimestamp
         )
 
@@ -695,6 +719,49 @@ object PdfReportGenerator {
                                 )
                                 textY += 11f
                             }
+                        }
+
+                        yPos += cardHeight + 10f
+                    }
+                    RenderPageAction.DrawResidentNoticesCard -> {
+                        val c = canvas!!
+                        val cardHeight = computeResidentNoticesCardHeight(plan)
+                        paint.color = cardBg
+                        val rect = RectF(MARGIN_X, yPos, CONTENT_RIGHT, yPos + cardHeight)
+                        c.drawRoundRect(rect, 8f, 8f, paint)
+                        paint.color = goldDark
+                        paint.style = Paint.Style.STROKE
+                        paint.strokeWidth = 1f
+                        c.drawRoundRect(rect, 8f, 8f, paint)
+                        paint.style = Paint.Style.FILL
+
+                        var textY = yPos + 16f
+                        paint.color = navyBg
+                        paint.textSize = 9.5f
+                        paint.isFakeBoldText = true
+                        c.drawText("📢 AVISOS IMPORTANTES DOS MORADORES (${plan.residentNotices.size}):", 35f, textY, paint)
+                        textY += 15f
+
+                        paint.isFakeBoldText = false
+                        paint.textSize = 8.5f
+                        plan.residentNotices.take(6).forEach { notice ->
+                            paint.color = navyBg
+                            paint.isFakeBoldText = true
+                            c.drawText("[${notice.unitFullIdentifier}]", 35f, textY, paint)
+
+                            paint.color = textDark
+                            paint.isFakeBoldText = false
+                            val visitorInfo = if (notice.visitorName.isNotBlank()) {
+                                " • Visitante: ${notice.visitorName}${if (notice.vehiclePlate.isNotBlank()) " (${notice.vehiclePlate})" else ""}"
+                            } else ""
+                            val line = "${notice.noticeTypeDisplayName} (${notice.residentName})$visitorInfo • Data: ${notice.formattedScheduledDate()}${if (notice.scheduledTime.isNotBlank()) " às ${notice.scheduledTime}" else ""}"
+                            c.drawText(line.take(75), 90f, textY, paint)
+
+                            paint.color = if (notice.status == "PENDENTE") Color.rgb(180, 83, 9) else Color.rgb(3, 105, 161)
+                            paint.isFakeBoldText = true
+                            c.drawText(notice.statusDisplayName.uppercase(), 500f, textY, paint)
+
+                            textY += 19f
                         }
 
                         yPos += cardHeight + 10f

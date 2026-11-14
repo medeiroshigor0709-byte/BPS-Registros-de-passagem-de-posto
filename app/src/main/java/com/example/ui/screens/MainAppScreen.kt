@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Tune
@@ -53,7 +54,8 @@ enum class BpsNavTab(
     IMAGE_TO_PDF("Img/PDF", Icons.Default.PictureAsPdf, "Conversor de Imagens para PDF"),
     CUSTOM_TEMPLATE("Modelo", Icons.Default.Tune, "Personalização do Modelo de Checklist"),
     EMPLOYEES("Equipe", Icons.Default.Badge, "Cadastro e Gestão de Colaboradores"),
-    HISTORY("Histórico", Icons.Default.History, "Histórico de Registros de Posto")
+    HISTORY("Histórico", Icons.Default.History, "Histórico de Registros de Posto"),
+    RESIDENT_NOTICES("Avisos", Icons.Default.Campaign, "Avisos e Visitas de Moradores")
 }
 
 @Composable
@@ -70,6 +72,7 @@ fun MainAppScreen(
 
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+    val pendingNoticesCount by viewModel.pendingNoticesCount.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -96,14 +99,21 @@ fun MainAppScreen(
                         selected = isSelected,
                         onClick = { selectedTab = tab },
                         icon = {
-                            if (tab == BpsNavTab.HISTORY && pendingCount > 0) {
+                            val badgeCount = when (tab) {
+                                BpsNavTab.HISTORY -> pendingCount
+                                BpsNavTab.RESIDENT_NOTICES -> pendingNoticesCount
+                                else -> 0
+                            }
+                            val badgeBg = if (tab == BpsNavTab.HISTORY) Color(0xFFEF4444) else Color(0xFFF59E0B)
+
+                            if (badgeCount > 0) {
                                 androidx.compose.material3.BadgedBox(
                                     badge = {
                                         androidx.compose.material3.Badge(
-                                            containerColor = Color(0xFFEF4444),
+                                            containerColor = badgeBg,
                                             contentColor = Color.White
                                         ) {
-                                            Text(pendingCount.toString())
+                                            Text(badgeCount.toString())
                                         }
                                     }
                                 ) {
@@ -124,7 +134,7 @@ fun MainAppScreen(
                         label = {
                             Text(
                                 text = tab.title,
-                                fontSize = 10.5.sp,
+                                fontSize = 9.5.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
@@ -153,6 +163,7 @@ fun MainAppScreen(
                 BpsNavTab.CUSTOM_TEMPLATE -> TemplateSettingsScreen(viewModel = viewModel)
                 BpsNavTab.EMPLOYEES -> EmployeeManagementScreen(viewModel = viewModel)
                 BpsNavTab.HISTORY -> HistoryScreen(viewModel = viewModel)
+                BpsNavTab.RESIDENT_NOTICES -> ResidentNoticesScreen(viewModel = viewModel)
             }
         }
     }

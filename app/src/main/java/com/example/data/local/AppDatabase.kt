@@ -9,6 +9,7 @@ import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.ChecklistTemplateItem
 import com.example.data.model.Employee
+import com.example.data.model.ResidentNotice
 import com.example.data.model.ShiftAttachment
 import com.example.data.model.ShiftCameraRecord
 import com.example.data.model.ShiftDraft
@@ -26,9 +27,10 @@ import kotlinx.coroutines.sync.withLock
         ShiftReport::class,
         ShiftDraft::class,
         ShiftAttachment::class,
-        ShiftCameraRecord::class
+        ShiftCameraRecord::class,
+        ResidentNotice::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,6 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun shiftDraftDao(): ShiftDraftDao
     abstract fun shiftAttachmentDao(): ShiftAttachmentDao
     abstract fun shiftCameraRecordDao(): ShiftCameraRecordDao
+    abstract fun residentNoticeDao(): ResidentNoticeDao
 
     companion object {
         const val DEFAULT_MODEL_NAME = ChecklistTemplateItem.DEFAULT_MODEL_NAME
@@ -134,6 +137,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `resident_notices` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `block` TEXT NOT NULL,
+                        `unitNumber` TEXT NOT NULL,
+                        `residentName` TEXT NOT NULL,
+                        `noticeType` TEXT NOT NULL,
+                        `visitorName` TEXT NOT NULL,
+                        `visitorDocument` TEXT NOT NULL,
+                        `vehiclePlate` TEXT NOT NULL,
+                        `vehicleModel` TEXT NOT NULL,
+                        `scheduledDate` TEXT NOT NULL,
+                        `scheduledTime` TEXT NOT NULL,
+                        `additionalNotes` TEXT NOT NULL,
+                        `registeredByGuardName` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `createdAtTimestamp` INTEGER NOT NULL,
+                        `lastUpdatedByGuardName` TEXT NOT NULL,
+                        `updatedAtTimestamp` INTEGER NOT NULL,
+                        `auditTrail` TEXT NOT NULL DEFAULT ''
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_resident_notices_block_unitNumber` ON `resident_notices` (`block`, `unitNumber`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_resident_notices_status` ON `resident_notices` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_resident_notices_scheduledDate` ON `resident_notices` (`scheduledDate`)")
+            }
+        }
+
         fun defaultEmployeesSeed(): List<Employee> = listOf(
             Employee(
                 name = "Cláudia",
@@ -179,7 +214,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "bps_facilities_database"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addCallback(DatabaseCallback())
                     .build()
                 INSTANCE = instance
