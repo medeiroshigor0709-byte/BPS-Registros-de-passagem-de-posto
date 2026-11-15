@@ -16,9 +16,9 @@ android {
     applicationId = "com.aistudio.bpsfacilities.vjkr"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (project.findProperty("appVersionCode") as? String)?.toIntOrNull() ?: 1
+    val ciVersionCode = (project.findProperty("appVersionCode") as? String)?.toIntOrNull() ?: 2
     val ciVersionName =
-      (project.findProperty("appVersionName") as? String)?.takeIf { it.isNotBlank() } ?: "1.0.0"
+      (project.findProperty("appVersionName") as? String)?.takeIf { it.isNotBlank() } ?: "1.1.0"
     versionCode = ciVersionCode
     versionName = ciVersionName
 

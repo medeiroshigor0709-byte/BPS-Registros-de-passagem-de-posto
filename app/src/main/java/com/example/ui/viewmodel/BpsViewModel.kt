@@ -23,6 +23,7 @@ import com.example.data.repository.BpsRepository
 import com.example.util.AttachmentStorageManager
 import com.example.util.ImageToPdfConverter
 import com.example.util.NetworkMonitor
+import com.example.util.NoticeSecurityManager
 import com.example.util.PdfReportGenerator
 import com.example.util.SelectedImageItem
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +121,9 @@ class BpsViewModel(
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _noticeRetentionDays = MutableStateFlow(NoticeSecurityManager.DEFAULT_RETENTION_DAYS)
+    val noticeRetentionDays: StateFlow<Int> = _noticeRetentionDays.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -922,10 +926,12 @@ class BpsViewModel(
         }
         _pdfValidationError.value = null
         try {
+            val activeNotices = getActiveNoticesForToday()
             val file = PdfReportGenerator.generateShiftPdf(
                 context = context,
                 formState = _formState.value,
-                activeItems = activeItems
+                activeItems = activeItems,
+                residentNotices = activeNotices
             )
             PdfReportGenerator.viewPdf(context, file)
         } catch (e: Exception) {
@@ -986,16 +992,75 @@ class BpsViewModel(
     // Resident Notices (Avisos de Moradores) Operations
     fun getActiveNoticesForToday(): List<ResidentNotice> {
         val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-        return residentNotices.value.filter {
-            it.status in listOf("PENDENTE", "VISUALIZADO") && it.scheduledDate >= todayIso
+        return residentNotices.value
+            .filter { it.status in listOf("PENDENTE", "VISUALIZADO") && it.scheduledDate >= todayIso }
+            .sortedWith(compareBy<ResidentNotice> { it.scheduledDate }.thenBy { it.scheduledTime }.thenByDescending { it.id })
+    }
+
+    fun loadNoticeRetentionDays(context: Context) {
+        _noticeRetentionDays.value = NoticeSecurityManager.getRetentionDays(context)
+    }
+
+    fun updateNoticeRetentionDays(context: Context, days: Int) {
+        NoticeSecurityManager.setRetentionDays(context, days)
+        _noticeRetentionDays.value = NoticeSecurityManager.getRetentionDays(context)
+        Toast.makeText(
+            context,
+            "Política de retenção atualizada para ${_noticeRetentionDays.value} dias.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    fun getEligibleNoticesForRetentionPurge(
+        retentionDays: Int = _noticeRetentionDays.value,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<ResidentNotice> {
+        return NoticeSecurityManager.findNoticesEligibleForPurge(
+            notices = residentNotices.value,
+            retentionDays = retentionDays,
+            nowMillis = nowMillis
+        )
+    }
+
+    fun purgeExpiredNoticesConfirmed(context: Context, expiredNotices: List<ResidentNotice>) {
+        if (expiredNotices.isEmpty()) return
+        viewModelScope.launch {
+            expiredNotices.forEach { notice ->
+                repository.deleteResidentNotice(notice)
+            }
+            Toast.makeText(
+                context,
+                "${expiredNotices.size} aviso(s) antigo(s) removido(s) conforme confirmação.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     fun saveResidentNotice(notice: ResidentNotice, context: Context? = null) {
         viewModelScope.launch {
-            repository.saveResidentNotice(notice)
+            val now = System.currentTimeMillis()
+            val plainOrExistingDoc = notice.decryptedDocument(context).trim()
+            val encryptedDoc = NoticeSecurityManager.encryptDocument(plainOrExistingDoc, context)
+            val actor = if (notice.id == 0L) {
+                notice.registeredByGuardName.ifBlank { "Porteiro" }
+            } else {
+                notice.lastUpdatedByGuardName.ifBlank { notice.registeredByGuardName.ifBlank { "Porteiro" } }
+            }
+            val auditAction = if (notice.id == 0L) {
+                "Aviso cadastrado (${notice.noticeTypeDisplayName}, Status: ${notice.statusDisplayName})"
+            } else {
+                "Dados do aviso atualizados (Status: ${notice.statusDisplayName})"
+            }
+            val securedNotice = notice.copy(
+                visitorDocument = encryptedDoc,
+                registeredByGuardName = notice.registeredByGuardName.ifBlank { actor },
+                lastUpdatedByGuardName = actor,
+                updatedAtTimestamp = now,
+                auditTrail = notice.appendAuditEntry(auditAction, actor, now)
+            )
+            repository.saveResidentNotice(securedNotice)
             context?.let {
-                Toast.makeText(it, "Aviso da unidade ${notice.unitFullIdentifier} salvo!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(it, "Aviso da unidade ${securedNotice.unitFullIdentifier} salvo!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1012,10 +1077,26 @@ class BpsViewModel(
     fun updateResidentNoticeStatus(noticeId: Long, newStatus: String, guardName: String, context: Context? = null) {
         viewModelScope.launch {
             val notice = repository.getResidentNoticeById(noticeId) ?: return@launch
+            val now = System.currentTimeMillis()
+            val effectiveGuard = guardName.trim().ifBlank {
+                notice.lastUpdatedByGuardName.ifBlank { notice.registeredByGuardName.ifBlank { "Porteiro" } }
+            }
+            val newStatusLabel = when (newStatus) {
+                "PENDENTE" -> "Pendente"
+                "VISUALIZADO" -> "Visualizado"
+                "CONCLUIDO" -> "Concluído"
+                "CANCELADO" -> "Cancelado"
+                else -> newStatus
+            }
             val updated = notice.copy(
                 status = newStatus,
-                lastUpdatedByGuardName = guardName.ifBlank { notice.lastUpdatedByGuardName },
-                updatedAtTimestamp = System.currentTimeMillis()
+                lastUpdatedByGuardName = effectiveGuard,
+                updatedAtTimestamp = now,
+                auditTrail = notice.appendAuditEntry(
+                    "Status alterado de ${notice.statusDisplayName} para $newStatusLabel",
+                    effectiveGuard,
+                    now
+                )
             )
             repository.saveResidentNotice(updated)
             context?.let {
@@ -1023,7 +1104,7 @@ class BpsViewModel(
                     "VISUALIZADO" -> "Aviso marcado como Visualizado"
                     "CONCLUIDO" -> "Aviso concluído e atendido!"
                     "CANCELADO" -> "Aviso cancelado"
-                    else -> "Status atualizado: $newStatus"
+                    else -> "Status atualizado: $newStatusLabel"
                 }
                 Toast.makeText(it, label, Toast.LENGTH_SHORT).show()
             }
@@ -1039,20 +1120,32 @@ class BpsViewModel(
         viewModelScope.launch {
             val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
             val targetDate = newDate ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(tomorrowCal.time)
-            val currentGuard = guardName ?: notice.registeredByGuardName
+            val currentGuard = (guardName ?: notice.registeredByGuardName).ifBlank { "Porteiro" }
+            val now = System.currentTimeMillis()
+            val plainDoc = notice.decryptedDocument(context)
+            val encryptedDoc = NoticeSecurityManager.encryptDocument(plainDoc, context)
 
-            val duplicated = notice.copy(
+            val baseDuplicated = notice.copy(
                 id = 0L,
+                visitorDocument = encryptedDoc,
                 scheduledDate = targetDate,
                 status = "PENDENTE",
-                createdAtTimestamp = System.currentTimeMillis(),
+                createdAtTimestamp = now,
                 registeredByGuardName = currentGuard,
                 lastUpdatedByGuardName = currentGuard,
-                updatedAtTimestamp = System.currentTimeMillis()
+                updatedAtTimestamp = now,
+                auditTrail = ""
+            )
+            val duplicated = baseDuplicated.copy(
+                auditTrail = baseDuplicated.appendAuditEntry(
+                    "Aviso duplicado a partir do registro #${notice.id} para ${baseDuplicated.formattedScheduledDate()}",
+                    currentGuard,
+                    now
+                )
             )
             repository.saveResidentNotice(duplicated)
             context?.let {
-                Toast.makeText(it, "Aviso duplicado com sucesso para a data $targetDate!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(it, "Aviso duplicado com sucesso para a data ${duplicated.formattedScheduledDate()}!", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -18,8 +18,10 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
@@ -1218,6 +1220,397 @@ class BpsUpdateFeaturesTest {
         )
         assertTrue(pdfFile.exists())
         assertTrue(pdfFile.length() > 0)
+    }
+
+    // 30. Seleção de todas as 144 unidades de ambos os blocos (A-001..A-144 e B-001..B-144) e zero moradores fictícios
+    @Test
+    fun `test 30 - all 288 units across Block A and Block B can be selected and parsed with zero demo residents`() {
+        val freshDb = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val existingNotices = kotlinx.coroutines.runBlocking {
+                freshDb.residentNoticeDao().getAllNoticesDirect()
+            }
+            assertTrue("Should not seed fictional resident notices initially", existingNotices.isEmpty())
+
+            val unitsA = com.example.data.local.CondoUnitsHelper.getAllUnitIdentifiers("A")
+            val unitsB = com.example.data.local.CondoUnitsHelper.getAllUnitIdentifiers("B")
+            assertEquals(144, unitsA.size)
+            assertEquals(144, unitsB.size)
+
+            (1..144).forEach { num ->
+                val expected = com.example.data.local.CondoUnitsHelper.formatUnitNumber(num)
+                assertEquals(expected, com.example.data.local.CondoUnitsHelper.parseUnitNumber(num.toString()))
+                assertEquals(expected, com.example.data.local.CondoUnitsHelper.parseUnitNumber("A-$expected"))
+                assertEquals(expected, com.example.data.local.CondoUnitsHelper.parseUnitNumber("B-$expected"))
+                assertTrue("A-$expected" in unitsA)
+                assertTrue("B-$expected" in unitsB)
+            }
+        } finally {
+            freshDb.close()
+        }
+    }
+
+    // 31. Cadastro, edição, cancelamento e auditoria de status (Visualizado não conclui automaticamente)
+    @Test
+    fun `test 31 - resident notice creation, edition, cancellation, status workflow and audit trail`() {
+        val viewModel = createTestViewModel()
+        val tomorrowCal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1) }
+        val tomorrowIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(tomorrowCal.time)
+
+        val karlaNotice = com.example.data.model.ResidentNotice(
+            block = "B",
+            unitNumber = "134",
+            residentName = "Karla",
+            noticeType = "VISITA_PROGRAMADA",
+            visitorName = "Roberto Almeida",
+            visitorDocument = "44.555.666-7",
+            vehiclePlate = "XYZ-9876",
+            vehicleModel = "Onix Preto",
+            scheduledDate = tomorrowIso,
+            scheduledTime = "15:00",
+            registeredByGuardName = "Higor",
+            status = "PENDENTE"
+        )
+        fun <T> waitUntilDb(condition: suspend () -> T?): T {
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (System.currentTimeMillis() < deadline) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle()
+                val value = kotlinx.coroutines.runBlocking { condition() }
+                if (value != null) return value
+                Thread.sleep(20)
+            }
+            return kotlinx.coroutines.runBlocking { condition() }
+                ?: throw AssertionError("Timed out waiting for Room DB state")
+        }
+
+        viewModel.saveResidentNotice(karlaNotice, context)
+        val saved = waitUntilDb { db.residentNoticeDao().getAllNoticesDirect().firstOrNull() }
+        assertEquals("VISITA PROGRAMADA — BLOCO B / UNIDADE 134", saved.officialHeaderIdentifier)
+        assertTrue(saved.auditTrail.contains("Higor"))
+        assertTrue(com.example.util.NoticeSecurityManager.isEncrypted(saved.visitorDocument))
+        assertEquals("44.555.666-7", saved.decryptedDocument(context))
+
+        // Update notice (Edit)
+        viewModel.saveResidentNotice(
+            saved.copy(visitorName = "Roberto Almeida Júnior", lastUpdatedByGuardName = "Cláudia"),
+            context
+        )
+        val edited = waitUntilDb {
+            db.residentNoticeDao().getNoticeById(saved.id)?.takeIf { it.visitorName == "Roberto Almeida Júnior" }
+        }
+        assertEquals("Roberto Almeida Júnior", edited.visitorName)
+        assertEquals("44.555.666-7", edited.decryptedDocument(context))
+
+        // Mark as VISUALIZADO -> MUST NOT become CONCLUIDO
+        viewModel.updateResidentNoticeStatus(edited.id, "VISUALIZADO", "Cláudia", context)
+        val viewed = waitUntilDb {
+            db.residentNoticeDao().getNoticeById(edited.id)?.takeIf { it.status == "VISUALIZADO" }
+        }
+        assertEquals("VISUALIZADO", viewed.status)
+        assertNotEquals("CONCLUIDO", viewed.status)
+        assertEquals("Cláudia", viewed.lastUpdatedByGuardName)
+        assertTrue(viewed.auditTrail.contains("Visualizado"))
+
+        // Cancel notice -> CANCELADO
+        viewModel.updateResidentNoticeStatus(edited.id, "CANCELADO", "Higor", context)
+        val cancelled = waitUntilDb {
+            db.residentNoticeDao().getNoticeById(edited.id)?.takeIf { it.status == "CANCELADO" }
+        }
+        assertEquals("CANCELADO", cancelled.status)
+        assertTrue(cancelled.auditTrail.contains("Cancelado"))
+        assertTrue(cancelled.auditTrail.contains("Higor"))
+    }
+
+    // 32. Filtros e pesquisa avançada por bloco, unidade, morador, visitante, data, tipo e status
+    @Test
+    fun `test 32 - resident notice filters and search by block, unit, resident, visitor, date, type and status`() {
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val tomorrowCal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1) }
+        val tomorrowIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(tomorrowCal.time)
+
+        kotlinx.coroutines.runBlocking {
+            db.residentNoticeDao().insertNotice(
+                com.example.data.model.ResidentNotice(
+                    block = "A", unitNumber = "025", residentName = "Marina",
+                    noticeType = "ENTREGA", visitorName = "Logística Express",
+                    scheduledDate = todayIso, status = "PENDENTE"
+                )
+            )
+            db.residentNoticeDao().insertNotice(
+                com.example.data.model.ResidentNotice(
+                    block = "B", unitNumber = "134", residentName = "Karla",
+                    noticeType = "VISITA_PROGRAMADA", visitorName = "Eduardo Souza",
+                    vehiclePlate = "ABC-1234", scheduledDate = tomorrowIso, status = "VISUALIZADO"
+                )
+            )
+            db.residentNoticeDao().insertNotice(
+                com.example.data.model.ResidentNotice(
+                    block = "B", unitNumber = "010", residentName = "Paulo",
+                    noticeType = "PRESTADOR_SERVICO", visitorName = "Eletricista João",
+                    scheduledDate = todayIso, status = "CONCLUIDO"
+                )
+            )
+        }
+
+        val all = kotlinx.coroutines.runBlocking { db.residentNoticeDao().getAllNoticesDirect() }
+        assertEquals(3, all.size)
+
+        // Block B filter
+        assertEquals(2, all.count { it.block == "B" })
+        // Unit filter B-134
+        assertEquals("Karla", all.first { it.unitFullIdentifier == "B-134" }.residentName)
+        // Visitor filter
+        assertEquals("010", all.first { it.visitorName.contains("Eletricista", ignoreCase = true) }.unitNumber)
+        // Type + Status + Date filters
+        assertEquals(1, all.count { it.noticeType == "ENTREGA" && it.status == "PENDENTE" && it.scheduledDate == todayIso })
+        assertEquals(1, all.count { it.scheduledDate == tomorrowIso && it.status == "VISUALIZADO" })
+        assertEquals(1, all.count { it.status == "CONCLUIDO" })
+    }
+
+    // 33. Persistência offline após fechar e reabrir o aplicativo (banco Room em arquivo sem internet)
+    @Test
+    fun `test 33 - resident notices persist offline after closing and reopening Room database`() {
+        val dbName = "bps_offline_reopen_test_${System.nanoTime()}.db"
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+        val db1 = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        val encryptedDoc = com.example.util.NoticeSecurityManager.encryptDocument("98.765.432-1", context)
+        kotlinx.coroutines.runBlocking {
+            db1.residentNoticeDao().insertNotice(
+                com.example.data.model.ResidentNotice(
+                    block = "B",
+                    unitNumber = "134",
+                    residentName = "Karla",
+                    noticeType = "VISITA_PROGRAMADA",
+                    visitorName = "Marcos Visitante",
+                    visitorDocument = encryptedDoc,
+                    scheduledDate = todayIso,
+                    status = "PENDENTE"
+                )
+            )
+        }
+        db1.close()
+
+        // Reopen database cleanly as after app restart
+        val db2 = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val reloaded = kotlinx.coroutines.runBlocking { db2.residentNoticeDao().getAllNoticesDirect() }
+            assertEquals(1, reloaded.size)
+            assertEquals("B-134", reloaded.first().unitFullIdentifier)
+            assertEquals("Karla", reloaded.first().residentName)
+            assertEquals("98.765.432-1", reloaded.first().decryptedDocument(context))
+        } finally {
+            db2.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    // 34. Proteção de dados pessoais e exclusão de avisos concluídos/cancelados no PDF
+    @Test
+    fun `test 34 - PDF excludes concluded cancelled and masks or omits raw personal documents`() {
+        kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+        }
+        val items = kotlinx.coroutines.runBlocking {
+            repository.getAllTemplateItemsDirect().sortedBy { it.orderIndex }
+        }
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val rawSecretDoc = "45999888777"
+        val activeNotice = com.example.data.model.ResidentNotice(
+            id = 1,
+            block = "B",
+            unitNumber = "134",
+            residentName = "Karla",
+            noticeType = "VISITA_PROGRAMADA",
+            visitorName = "Fernanda Lima",
+            visitorDocument = com.example.util.NoticeSecurityManager.encryptDocument(rawSecretDoc, context),
+            vehiclePlate = "BRA-2E19",
+            scheduledDate = todayIso,
+            status = "PENDENTE"
+        )
+        val concludedNotice = activeNotice.copy(
+            id = 2,
+            block = "A",
+            unitNumber = "025",
+            residentName = "Antônio Concluído",
+            status = "CONCLUIDO"
+        )
+        val cancelledNotice = activeNotice.copy(
+            id = 3,
+            block = "B",
+            unitNumber = "010",
+            residentName = "Rafael Cancelado",
+            status = "CANCELADO"
+        )
+
+        val plan = PdfReportGenerator.buildPdfPlan(
+            formState = ShiftFormUiState(
+                greeting = "Boa Noite",
+                postName = "*PORTARIA*",
+                departingEmployee = "Higor",
+                receivingEmployee = "Cláudia"
+            ),
+            activeItems = items,
+            residentNotices = listOf(activeNotice, concludedNotice, cancelledNotice)
+        )
+        // Only active PENDENTE/VISUALIZADO notice enters the PDF plan
+        assertEquals(1, plan.residentNotices.size)
+        assertEquals("Karla", plan.residentNotices.first().residentName)
+
+        // Generate PDF and check raw text bytes in fallback/output don't leak concluded/cancelled or raw personal document
+        val pdfFile = PdfReportGenerator.generateShiftPdf(
+            context = context,
+            formState = ShiftFormUiState(
+                greeting = "Boa Noite",
+                postName = "*PORTARIA*",
+                departingEmployee = "Higor",
+                receivingEmployee = "Cláudia"
+            ),
+            activeItems = items,
+            residentNotices = listOf(activeNotice, concludedNotice, cancelledNotice)
+        )
+        assertTrue(pdfFile.exists())
+        assertTrue(com.example.util.NoticeSecurityManager.maskDocument(activeNotice.visitorDocument, context).contains("*"))
+        val rawPdfText = pdfFile.readText(Charsets.ISO_8859_1)
+        assertFalse("Raw visitor document must NOT be leaked in PDF", rawPdfText.contains(rawSecretDoc))
+        assertFalse("Concluded notice must NOT appear in handover PDF", rawPdfText.contains("Ant"))
+        assertFalse("Cancelled notice must NOT appear in handover PDF", rawPdfText.contains("Rafael Cancelado"))
+    }
+
+    // 35. Política de retenção configurável identifica antigos sem apagar silenciosamente
+    @Test
+    fun `test 35 - retention policy identifies only old concluded or cancelled notices without silent deletion`() {
+        val now = System.currentTimeMillis()
+        val oldTimestamp = now - (100L * 24L * 60L * 60L * 1000L) // 100 days ago
+        val recentTimestamp = now - (5L * 24L * 60L * 60L * 1000L) // 5 days ago
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+        val notices = listOf(
+            com.example.data.model.ResidentNotice(
+                id = 1, block = "A", unitNumber = "001", residentName = "Antigo Concluído",
+                noticeType = "ENTREGA", scheduledDate = todayIso, status = "CONCLUIDO",
+                updatedAtTimestamp = oldTimestamp
+            ),
+            com.example.data.model.ResidentNotice(
+                id = 2, block = "A", unitNumber = "002", residentName = "Antigo Pendente",
+                noticeType = "ENTREGA", scheduledDate = todayIso, status = "PENDENTE",
+                updatedAtTimestamp = oldTimestamp
+            ),
+            com.example.data.model.ResidentNotice(
+                id = 3, block = "B", unitNumber = "010", residentName = "Recente Concluído",
+                noticeType = "ENTREGA", scheduledDate = todayIso, status = "CONCLUIDO",
+                updatedAtTimestamp = recentTimestamp
+            )
+        )
+
+        com.example.util.NoticeSecurityManager.setRetentionDays(context, 90)
+        assertEquals(90, com.example.util.NoticeSecurityManager.getRetentionDays(context))
+
+        val eligible = com.example.util.NoticeSecurityManager.findNoticesEligibleForPurge(
+            notices = notices,
+            retentionDays = 90,
+            nowMillis = now
+        )
+        assertEquals(1, eligible.size)
+        assertEquals(1L, eligible.first().id)
+    }
+
+    // 36. Compose UI: Painel AVISOS PARA O PRÓXIMO TURNO, cartões expansíveis e responsividade (compacto + tablet)
+    @Test
+    fun `test 36 - Compose UI next shift notices panel, expandable cards, unit grid and responsive sizes`() {
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        kotlinx.coroutines.runBlocking {
+            AppDatabase.populateInitialData(db)
+            db.residentNoticeDao().insertNotice(
+                com.example.data.model.ResidentNotice(
+                    block = "B",
+                    unitNumber = "134",
+                    residentName = "Karla",
+                    noticeType = "VISITA_PROGRAMADA",
+                    visitorName = "Lucas Pereira",
+                    vehiclePlate = "KRL-2026",
+                    scheduledDate = todayIso,
+                    scheduledTime = "18:00",
+                    additionalNotes = "Autorizado entrar pela garagem",
+                    registeredByGuardName = "Higor",
+                    status = "PENDENTE"
+                )
+            )
+        }
+
+        val viewModel = createTestViewModel()
+        composeTestRule.setContent {
+            MyApplicationTheme(darkTheme = true) {
+                MainAppScreen(viewModel = viewModel)
+            }
+        }
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            viewModel.residentNotices.value.isNotEmpty()
+        }
+        composeTestRule.waitForIdle()
+
+        // 1. Verify next shift notices panel appears on Passagem tab
+        composeTestRule.onNodeWithTag("shift_handover_list")
+            .performScrollToNode(hasTestTag("next_shift_notices_panel"))
+        composeTestRule.onNodeWithTag("next_shift_notices_panel")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag("next_shift_notices_title")
+            .assertIsDisplayed()
+            .assertTextContains("AVISOS PARA O PRÓXIMO TURNO", substring = true)
+
+        // 2. Navigate via panel button to Avisos tab & expand notice card
+        composeTestRule.onNodeWithTag("open_resident_notices_panel_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        val noticeId = viewModel.residentNotices.value.first().id
+        composeTestRule.onNodeWithTag("notices_lazy_list")
+            .performScrollToNode(hasTestTag("notice_card_$noticeId"))
+        composeTestRule.onNodeWithTag("notice_expand_btn_$noticeId").performClick()
+        composeTestRule.waitForIdle()
+
+        // Open form dialog & confirm Block B + unit grid selector work
+        composeTestRule.onNodeWithTag("notices_lazy_list")
+            .performScrollToNode(hasTestTag("new_notice_button"))
+        composeTestRule.onNodeWithTag("new_notice_button").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("notice_form_dialog").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_block_B").performClick()
+        composeTestRule.onNodeWithTag("form_unit_input").performTextReplacement("134")
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("unit_grid_item_B_134").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("close_notice_form_btn").performClick()
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w840dp-h1000dp")
+    fun `test 37 - ResidentNoticesScreen and bottom navigation render cleanly on tablet width offline`() {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.activeNetwork?.let { activeNet ->
+            Shadows.shadowOf(cm).setNetworkCapabilities(activeNet, android.net.NetworkCapabilities())
+        }
+        assertFalse(NetworkMonitor(context).checkCurrentConnectivity())
+
+        val viewModel = createTestViewModel()
+        composeTestRule.setContent {
+            MyApplicationTheme(darkTheme = true) {
+                MainAppScreen(viewModel = viewModel)
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("nav_tab_resident_notices").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("bps_header_card").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bps_bottom_navigation").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("new_notice_button").assertIsDisplayed()
     }
 }
 

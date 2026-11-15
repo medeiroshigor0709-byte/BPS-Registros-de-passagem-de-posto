@@ -1,8 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,24 +10,20 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
@@ -37,20 +32,21 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -62,7 +58,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,17 +71,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.CondoUnitsHelper
 import com.example.data.model.ResidentNotice
-import com.example.ui.theme.BpsDarkBg
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
 import com.example.ui.theme.BpsGoldLight
@@ -95,7 +88,9 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ResidentNoticesScreen(
     viewModel: BpsViewModel,
@@ -104,20 +99,38 @@ fun ResidentNoticesScreen(
     val context = LocalContext.current
     val notices by viewModel.residentNotices.collectAsStateWithLifecycle()
     val employees by viewModel.employees.collectAsStateWithLifecycle()
+    val retentionDays by viewModel.noticeRetentionDays.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadNoticeRetentionDays(context)
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedTimeframeFilter by remember { mutableStateOf("TODOS") } // "TODOS", "HOJE", "PROXIMOS", "PENDENTES", "CONCLUIDOS"
     var selectedBlockFilter by remember { mutableStateOf("TODOS") } // "TODOS", "A", "B"
+    var selectedUnitFilter by remember { mutableStateOf("") }
     var selectedTypeFilter by remember { mutableStateOf("TODOS") }
+    var selectedStatusFilter by remember { mutableStateOf("TODOS") }
+    var selectedDateFilter by remember { mutableStateOf("") } // "" = Todas, or "AAAA-MM-DD"
+    var showAdvancedFilters by remember { mutableStateOf(false) }
+    var showFilterDatePicker by remember { mutableStateOf(false) }
 
+    var expandedNoticeIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showFormDialog by remember { mutableStateOf(false) }
+    var isDuplicateFormMode by remember { mutableStateOf(false) }
     var noticeToEdit by remember { mutableStateOf<ResidentNotice?>(null) }
     var noticeForDetails by remember { mutableStateOf<ResidentNotice?>(null) }
     var noticeToDuplicate by remember { mutableStateOf<ResidentNotice?>(null) }
     var noticeToDelete by remember { mutableStateOf<ResidentNotice?>(null) }
+    var showRetentionDialog by remember { mutableStateOf(false) }
+    var showPurgeConfirmDialog by remember { mutableStateOf(false) }
 
     val todayIso = remember {
         SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    }
+    val tomorrowIso = remember {
+        val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
     }
 
     val filteredNotices = remember(
@@ -125,21 +138,35 @@ fun ResidentNoticesScreen(
         searchQuery,
         selectedTimeframeFilter,
         selectedBlockFilter,
+        selectedUnitFilter,
         selectedTypeFilter,
+        selectedStatusFilter,
+        selectedDateFilter,
         todayIso
     ) {
         notices.filter { notice ->
-            // Block filter
             if (selectedBlockFilter != "TODOS" && notice.block != selectedBlockFilter) {
                 return@filter false
             }
-
-            // Type filter
+            if (selectedUnitFilter.isNotBlank()) {
+                val cleanFilterUnit = CondoUnitsHelper.parseUnitNumber(selectedUnitFilter)
+                    ?: selectedUnitFilter.trim()
+                if (!notice.unitNumber.contains(cleanFilterUnit, ignoreCase = true) &&
+                    !notice.unitFullIdentifier.contains(selectedUnitFilter.trim(), ignoreCase = true)
+                ) {
+                    return@filter false
+                }
+            }
             if (selectedTypeFilter != "TODOS" && notice.noticeType != selectedTypeFilter) {
                 return@filter false
             }
+            if (selectedStatusFilter != "TODOS" && notice.status != selectedStatusFilter) {
+                return@filter false
+            }
+            if (selectedDateFilter.isNotBlank() && notice.scheduledDate != selectedDateFilter) {
+                return@filter false
+            }
 
-            // Timeframe / Status filter
             val matchesTimeframe = when (selectedTimeframeFilter) {
                 "HOJE" -> notice.scheduledDate == todayIso
                 "PROXIMOS" -> notice.scheduledDate > todayIso && notice.status != "CANCELADO"
@@ -149,11 +176,9 @@ fun ResidentNoticesScreen(
             }
             if (!matchesTimeframe) return@filter false
 
-            // Query filter
             if (searchQuery.isNotBlank()) {
                 val q = searchQuery.trim()
-                val unitFull = "${notice.block}-${notice.unitNumber}"
-                val match = unitFull.contains(q, ignoreCase = true) ||
+                val match = notice.unitFullIdentifier.contains(q, ignoreCase = true) ||
                     notice.unitNumber.contains(q, ignoreCase = true) ||
                     notice.residentName.contains(q, ignoreCase = true) ||
                     notice.visitorName.contains(q, ignoreCase = true) ||
@@ -166,12 +191,41 @@ fun ResidentNoticesScreen(
         }
     }
 
+    val hasAnyFilter = searchQuery.isNotBlank() ||
+        selectedBlockFilter != "TODOS" ||
+        selectedUnitFilter.isNotBlank() ||
+        selectedTypeFilter != "TODOS" ||
+        selectedStatusFilter != "TODOS" ||
+        selectedDateFilter.isNotBlank() ||
+        selectedTimeframeFilter != "TODOS"
+
+    val todaySectionNotices = remember(filteredNotices, todayIso) {
+        filteredNotices.filter { it.scheduledDate == todayIso && it.status != "CONCLUIDO" && it.status != "CANCELADO" }
+    }
+    val upcomingSectionNotices = remember(filteredNotices, todayIso) {
+        filteredNotices.filter { it.scheduledDate > todayIso && it.status != "CONCLUIDO" && it.status != "CANCELADO" }
+    }
+    val pendingOverdueSectionNotices = remember(filteredNotices, todayIso) {
+        filteredNotices.filter { it.scheduledDate < todayIso && (it.status == "PENDENTE" || it.status == "VISUALIZADO") }
+    }
+    val completedSectionNotices = remember(filteredNotices) {
+        filteredNotices.filter { it.status == "CONCLUIDO" }
+    }
+    val cancelledSectionNotices = remember(filteredNotices) {
+        filteredNotices.filter { it.status == "CANCELADO" }
+    }
+
+    val eligibleForPurge = remember(notices, retentionDays) {
+        viewModel.getEligibleNoticesForRetentionPurge(retentionDays)
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp)
+                .testTag("notices_lazy_list"),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -188,7 +242,7 @@ fun ResidentNoticesScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = "Visitas programadas, entregas, prestadores e recados dos Blocos A e B.",
+                            text = "Armazenamento local offline seguro • Blocos A e B (288 unidades)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -197,12 +251,13 @@ fun ResidentNoticesScreen(
                     Button(
                         onClick = {
                             noticeToEdit = null
+                            isDuplicateFormMode = false
                             showFormDialog = true
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BpsGold),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("new_notice_button")
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("new_notice_button")
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color(0xFF1E1400), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -211,46 +266,87 @@ fun ResidentNoticesScreen(
                 }
             }
 
-            // Quick Search
+            // Quick Search + Filter & Privacy Action Row
             item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Buscar unidade (ex: B-134), morador, visitante...") },
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = BpsGold)
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(imageVector = Icons.Default.Close, contentDescription = "Limpar busca")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Buscar unidade (B-134, A-025), morador, visitante ou placa...") },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = BpsGold)
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(imageVector = Icons.Default.Close, contentDescription = "Limpar busca")
+                                }
                             }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("notice_search_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showAdvancedFilters = !showAdvancedFilters },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (showAdvancedFilters) BpsGold else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.weight(1f).testTag("toggle_filters_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.FilterList, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (showAdvancedFilters) "Ocultar Filtros" else "Filtros Avançados",
+                                fontSize = 12.sp,
+                                color = BpsGoldLight
+                            )
                         }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("notice_search_input"),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
+
+                        OutlinedButton(
+                            onClick = { showRetentionDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.45f)),
+                            modifier = Modifier.weight(1f).testTag("privacy_retention_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Privacidade (${retentionDays}d)",
+                                fontSize = 12.sp,
+                                color = BpsGoldLight
+                            )
+                        }
+                    }
+                }
             }
 
-            // Block filter: [ TODOS ] [ BLOCO A ] [ BLOCO B ]
+            // Block Selector: [ TODOS ] [ BLOCO A ] [ BLOCO B ]
             item {
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilterChip(
                         selected = selectedBlockFilter == "TODOS",
                         onClick = { selectedBlockFilter = "TODOS" },
-                        label = { Text("Todos os Blocos (288 un)", fontSize = 12.sp) },
+                        label = { Text("Todos (288 un)", fontSize = 12.sp) },
                         modifier = Modifier.testTag("filter_block_all")
                     )
                     FilterChip(
                         selected = selectedBlockFilter == "A",
                         onClick = { selectedBlockFilter = "A" },
-                        label = { Text("Bloco A (144 un)", fontSize = 12.sp) },
+                        label = { Text("BLOCO A (144 un)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BpsGoldDark,
                             selectedLabelColor = Color.White
@@ -260,7 +356,7 @@ fun ResidentNoticesScreen(
                     FilterChip(
                         selected = selectedBlockFilter == "B",
                         onClick = { selectedBlockFilter = "B" },
-                        label = { Text("Bloco B (144 un)", fontSize = 12.sp) },
+                        label = { Text("BLOCO B (144 un)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BpsGoldDark,
                             selectedLabelColor = Color.White
@@ -270,15 +366,18 @@ fun ResidentNoticesScreen(
                 }
             }
 
-            // Timeframe / Status filters
+            // Section / Timeframe Filter Chips
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val countPending = notices.count { it.status == "PENDENTE" }
-                    val countToday = notices.count { it.scheduledDate == todayIso }
+                val countPending = notices.count { it.status == "PENDENTE" }
+                val countToday = notices.count { it.scheduledDate == todayIso }
+                val countUpcoming = notices.count { it.scheduledDate > todayIso && it.status != "CANCELADO" }
+                val countDone = notices.count { it.status == "CONCLUIDO" }
 
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     FilterChip(
                         selected = selectedTimeframeFilter == "TODOS",
                         onClick = { selectedTimeframeFilter = "TODOS" },
@@ -294,7 +393,7 @@ fun ResidentNoticesScreen(
                     FilterChip(
                         selected = selectedTimeframeFilter == "PROXIMOS",
                         onClick = { selectedTimeframeFilter = "PROXIMOS" },
-                        label = { Text("Próximos", fontSize = 11.5.sp) },
+                        label = { Text("Próximos ($countUpcoming)", fontSize = 11.5.sp) },
                         modifier = Modifier.testTag("filter_timeframe_upcoming")
                     )
                     FilterChip(
@@ -310,33 +409,351 @@ fun ResidentNoticesScreen(
                         },
                         modifier = Modifier.testTag("filter_timeframe_pending")
                     )
+                    FilterChip(
+                        selected = selectedTimeframeFilter == "CONCLUIDOS",
+                        onClick = { selectedTimeframeFilter = "CONCLUIDOS" },
+                        label = { Text("Concluídos ($countDone)", fontSize = 11.5.sp) },
+                        modifier = Modifier.testTag("filter_timeframe_done")
+                    )
                 }
             }
 
-            // Results count
-            item {
-                Text(
-                    text = "Avisos Registrados (${filteredNotices.size})",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            // Collapsible Advanced Filters (Unit, Date, Notice Type, Status)
+            if (showAdvancedFilters) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                        border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("advanced_filters_panel")
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Filtros Detalhados", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
+                                if (hasAnyFilter) {
+                                    TextButton(
+                                        onClick = {
+                                            searchQuery = ""
+                                            selectedBlockFilter = "TODOS"
+                                            selectedUnitFilter = ""
+                                            selectedTypeFilter = "TODOS"
+                                            selectedStatusFilter = "TODOS"
+                                            selectedDateFilter = ""
+                                            selectedTimeframeFilter = "TODOS"
+                                        },
+                                        modifier = Modifier.testTag("clear_all_filters_btn")
+                                    ) {
+                                        Text("Limpar filtros", fontSize = 11.5.sp, color = BpsGold)
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = selectedUnitFilter,
+                                onValueChange = { selectedUnitFilter = it },
+                                label = { Text("Filtrar Unidade (001 a 144 ou A-025 / B-134)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("filter_unit_input")
+                            )
+
+                            Text("Data programada:", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCBD5E1))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = selectedDateFilter.isBlank(),
+                                    onClick = { selectedDateFilter = "" },
+                                    label = { Text("Todas", fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("filter_date_all")
+                                )
+                                FilterChip(
+                                    selected = selectedDateFilter == todayIso,
+                                    onClick = { selectedDateFilter = todayIso },
+                                    label = { Text("Hoje", fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("filter_date_today")
+                                )
+                                FilterChip(
+                                    selected = selectedDateFilter == tomorrowIso,
+                                    onClick = { selectedDateFilter = tomorrowIso },
+                                    label = { Text("Amanhã", fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("filter_date_tomorrow")
+                                )
+                                OutlinedButton(
+                                    onClick = { showFilterDatePicker = true },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.testTag("filter_date_calendar")
+                                ) {
+                                    Icon(imageVector = Icons.Default.CalendarMonth, contentDescription = null, tint = BpsGold, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (selectedDateFilter.isNotBlank()) selectedDateFilter else "Calendário",
+                                        fontSize = 11.sp,
+                                        color = BpsGoldLight
+                                    )
+                                }
+                            }
+
+                            Text("Tipo de aviso:", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCBD5E1))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(
+                                    "TODOS" to "Todos",
+                                    "VISITA_PROGRAMADA" to "Visita",
+                                    "PRESTADOR_SERVICO" to "Prestador",
+                                    "ENTREGA" to "Entrega",
+                                    "AUTORIZACAO_ENTRADA" to "Autorização",
+                                    "MANUTENCAO" to "Manutenção",
+                                    "OUTRO" to "Outro"
+                                ).forEach { (key, label) ->
+                                    FilterChip(
+                                        selected = selectedTypeFilter == key,
+                                        onClick = { selectedTypeFilter = key },
+                                        label = { Text(label, fontSize = 11.sp) },
+                                        modifier = Modifier.testTag("filter_type_$key")
+                                    )
+                                }
+                            }
+
+                            Text("Status:", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFCBD5E1))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(
+                                    "TODOS" to "Todos",
+                                    "PENDENTE" to "🟡 Pendente",
+                                    "VISUALIZADO" to "🔵 Visualizado",
+                                    "CONCLUIDO" to "🟢 Concluído",
+                                    "CANCELADO" to "🔴 Cancelado"
+                                ).forEach { (key, label) ->
+                                    FilterChip(
+                                        selected = selectedStatusFilter == key,
+                                        onClick = { selectedStatusFilter = key },
+                                        label = { Text(label, fontSize = 11.sp) },
+                                        modifier = Modifier.testTag("filter_status_$key")
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if (filteredNotices.isEmpty()) {
                 item {
-                    EmptyNoticesCard(hasFilter = searchQuery.isNotBlank() || selectedBlockFilter != "TODOS" || selectedTimeframeFilter != "TODOS") {
+                    EmptyNoticesCard(hasFilter = hasAnyFilter) {
                         noticeToEdit = null
+                        isDuplicateFormMode = false
                         showFormDialog = true
                     }
                 }
+            } else if (selectedTimeframeFilter == "TODOS" && selectedStatusFilter == "TODOS") {
+                val pendingTotal = filteredNotices.count { it.status == "PENDENTE" }
+                if (pendingTotal > 0) {
+                    item(key = "header_pending_summary") {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFF78350F).copy(alpha = 0.25f),
+                            border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth().testTag("section_header_pending")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "🟡 AVISOS PENDENTES ($pendingTotal)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = Color(0xFFFCD34D)
+                                )
+                                TextButton(onClick = { selectedTimeframeFilter = "PENDENTES" }) {
+                                    Text("Ver só pendentes", fontSize = 11.sp, color = BpsGoldLight)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (todaySectionNotices.isNotEmpty()) {
+                    item(key = "header_today") {
+                        SectionHeaderBanner("📅 AVISOS DE HOJE (${todaySectionNotices.size})", BpsGoldLight, "section_header_today")
+                    }
+                    items(todaySectionNotices, key = { "today_${it.id}" }) { notice ->
+                        ResidentNoticeCard(
+                            notice = notice,
+                            isExpanded = notice.id in expandedNoticeIds,
+                            onToggleExpand = {
+                                expandedNoticeIds = if (notice.id in expandedNoticeIds) {
+                                    expandedNoticeIds - notice.id
+                                } else {
+                                    expandedNoticeIds + notice.id
+                                }
+                            },
+                            onViewDetails = { noticeForDetails = notice },
+                            onEdit = {
+                                noticeToEdit = notice
+                                isDuplicateFormMode = false
+                                showFormDialog = true
+                            },
+                            onDuplicate = { noticeToDuplicate = notice },
+                            onQuickStatusChange = { newStatus ->
+                                val currentGuard = employees.firstOrNull()?.name ?: "Porteiro"
+                                viewModel.updateResidentNoticeStatus(notice.id, newStatus, currentGuard, context)
+                            },
+                            onDelete = { noticeToDelete = notice }
+                        )
+                    }
+                }
+
+                if (upcomingSectionNotices.isNotEmpty()) {
+                    item(key = "header_upcoming") {
+                        SectionHeaderBanner("📆 PRÓXIMOS AVISOS (${upcomingSectionNotices.size})", Color(0xFF7DD3FC), "section_header_upcoming")
+                    }
+                    items(upcomingSectionNotices, key = { "upcoming_${it.id}" }) { notice ->
+                        ResidentNoticeCard(
+                            notice = notice,
+                            isExpanded = notice.id in expandedNoticeIds,
+                            onToggleExpand = {
+                                expandedNoticeIds = if (notice.id in expandedNoticeIds) {
+                                    expandedNoticeIds - notice.id
+                                } else {
+                                    expandedNoticeIds + notice.id
+                                }
+                            },
+                            onViewDetails = { noticeForDetails = notice },
+                            onEdit = {
+                                noticeToEdit = notice
+                                isDuplicateFormMode = false
+                                showFormDialog = true
+                            },
+                            onDuplicate = { noticeToDuplicate = notice },
+                            onQuickStatusChange = { newStatus ->
+                                val currentGuard = employees.firstOrNull()?.name ?: "Porteiro"
+                                viewModel.updateResidentNoticeStatus(notice.id, newStatus, currentGuard, context)
+                            },
+                            onDelete = { noticeToDelete = notice }
+                        )
+                    }
+                }
+
+                if (pendingOverdueSectionNotices.isNotEmpty()) {
+                    item(key = "header_pending_overdue") {
+                        SectionHeaderBanner("🟡 AVISOS PENDENTES ANTERIORES (${pendingOverdueSectionNotices.size})", Color(0xFFF59E0B), "section_header_pending_overdue")
+                    }
+                    items(pendingOverdueSectionNotices, key = { "overdue_${it.id}" }) { notice ->
+                        ResidentNoticeCard(
+                            notice = notice,
+                            isExpanded = notice.id in expandedNoticeIds,
+                            onToggleExpand = {
+                                expandedNoticeIds = if (notice.id in expandedNoticeIds) {
+                                    expandedNoticeIds - notice.id
+                                } else {
+                                    expandedNoticeIds + notice.id
+                                }
+                            },
+                            onViewDetails = { noticeForDetails = notice },
+                            onEdit = {
+                                noticeToEdit = notice
+                                isDuplicateFormMode = false
+                                showFormDialog = true
+                            },
+                            onDuplicate = { noticeToDuplicate = notice },
+                            onQuickStatusChange = { newStatus ->
+                                val currentGuard = employees.firstOrNull()?.name ?: "Porteiro"
+                                viewModel.updateResidentNoticeStatus(notice.id, newStatus, currentGuard, context)
+                            },
+                            onDelete = { noticeToDelete = notice }
+                        )
+                    }
+                }
+
+                if (completedSectionNotices.isNotEmpty()) {
+                    item(key = "header_completed") {
+                        SectionHeaderBanner("🟢 AVISOS CONCLUÍDOS (${completedSectionNotices.size})", StatusOk, "section_header_completed")
+                    }
+                    items(completedSectionNotices, key = { "done_${it.id}" }) { notice ->
+                        ResidentNoticeCard(
+                            notice = notice,
+                            isExpanded = notice.id in expandedNoticeIds,
+                            onToggleExpand = {
+                                expandedNoticeIds = if (notice.id in expandedNoticeIds) {
+                                    expandedNoticeIds - notice.id
+                                } else {
+                                    expandedNoticeIds + notice.id
+                                }
+                            },
+                            onViewDetails = { noticeForDetails = notice },
+                            onEdit = {
+                                noticeToEdit = notice
+                                isDuplicateFormMode = false
+                                showFormDialog = true
+                            },
+                            onDuplicate = { noticeToDuplicate = notice },
+                            onQuickStatusChange = { newStatus ->
+                                val currentGuard = employees.firstOrNull()?.name ?: "Porteiro"
+                                viewModel.updateResidentNoticeStatus(notice.id, newStatus, currentGuard, context)
+                            },
+                            onDelete = { noticeToDelete = notice }
+                        )
+                    }
+                }
+
+                if (cancelledSectionNotices.isNotEmpty()) {
+                    item(key = "header_cancelled") {
+                        SectionHeaderBanner("🔴 AVISOS CANCELADOS (${cancelledSectionNotices.size})", StatusError, "section_header_cancelled")
+                    }
+                    items(cancelledSectionNotices, key = { "cancel_${it.id}" }) { notice ->
+                        ResidentNoticeCard(
+                            notice = notice,
+                            isExpanded = notice.id in expandedNoticeIds,
+                            onToggleExpand = {
+                                expandedNoticeIds = if (notice.id in expandedNoticeIds) {
+                                    expandedNoticeIds - notice.id
+                                } else {
+                                    expandedNoticeIds + notice.id
+                                }
+                            },
+                            onViewDetails = { noticeForDetails = notice },
+                            onEdit = {
+                                noticeToEdit = notice
+                                isDuplicateFormMode = false
+                                showFormDialog = true
+                            },
+                            onDuplicate = { noticeToDuplicate = notice },
+                            onQuickStatusChange = { newStatus ->
+                                val currentGuard = employees.firstOrNull()?.name ?: "Porteiro"
+                                viewModel.updateResidentNoticeStatus(notice.id, newStatus, currentGuard, context)
+                            },
+                            onDelete = { noticeToDelete = notice }
+                        )
+                    }
+                }
             } else {
-                items(filteredNotices, key = { it.id }) { notice ->
+                item(key = "header_filtered") {
+                    val sectionLabel = when (selectedTimeframeFilter) {
+                        "HOJE" -> "📅 AVISOS DE HOJE (${filteredNotices.size})"
+                        "PROXIMOS" -> "📆 PRÓXIMOS AVISOS (${filteredNotices.size})"
+                        "PENDENTES" -> "🟡 AVISOS PENDENTES (${filteredNotices.size})"
+                        "CONCLUIDOS" -> "🟢 AVISOS CONCLUÍDOS (${filteredNotices.size})"
+                        else -> "📋 AVISOS FILTRADOS (${filteredNotices.size})"
+                    }
+                    SectionHeaderBanner(sectionLabel, BpsGoldLight, "section_header_filtered")
+                }
+                items(filteredNotices, key = { "filtered_${it.id}" }) { notice ->
                     ResidentNoticeCard(
                         notice = notice,
+                        isExpanded = notice.id in expandedNoticeIds,
+                        onToggleExpand = {
+                            expandedNoticeIds = if (notice.id in expandedNoticeIds) {
+                                expandedNoticeIds - notice.id
+                            } else {
+                                expandedNoticeIds + notice.id
+                            }
+                        },
                         onViewDetails = { noticeForDetails = notice },
                         onEdit = {
                             noticeToEdit = notice
+                            isDuplicateFormMode = false
                             showFormDialog = true
                         },
                         onDuplicate = { noticeToDuplicate = notice },
@@ -355,19 +772,51 @@ fun ResidentNoticesScreen(
         }
     }
 
-    // Modal de Cadastro / Edição
+    if (showFilterDatePicker) {
+        val datePickerState = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showFilterDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                                timeZone = TimeZone.getTimeZone("UTC")
+                            }
+                            selectedDateFilter = sdf.format(Date(millis))
+                        }
+                        showFilterDatePicker = false
+                    }
+                ) {
+                    Text("Filtrar Data", color = BpsGold, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFilterDatePicker = false }) {
+                    Text("Cancelar")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    // Modal de Cadastro / Edição / Duplicação Revisada
     if (showFormDialog) {
         ResidentNoticeFormDialog(
             initialNotice = noticeToEdit,
+            isDuplicateDraft = isDuplicateFormMode,
             employees = employees,
             onDismiss = {
                 showFormDialog = false
                 noticeToEdit = null
+                isDuplicateFormMode = false
             },
             onSave = { notice ->
                 viewModel.saveResidentNotice(notice, context)
                 showFormDialog = false
                 noticeToEdit = null
+                isDuplicateFormMode = false
             }
         )
     }
@@ -385,6 +834,7 @@ fun ResidentNoticesScreen(
             onEdit = {
                 noticeForDetails = null
                 noticeToEdit = latestNotice
+                isDuplicateFormMode = false
                 showFormDialog = true
             },
             onDuplicate = {
@@ -406,7 +856,7 @@ fun ResidentNoticesScreen(
             title = { Text("Duplicar Aviso?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "Deseja reutilizar as informações do aviso da unidade ${notice.unitFullIdentifier} (${notice.residentName}) para criar um novo registro para amanhã?"
+                    "Deseja reutilizar as informações do aviso da unidade ${notice.unitFullIdentifier} (${notice.residentName}) para criar um novo registro?"
                 )
             },
             confirmButton = {
@@ -419,12 +869,25 @@ fun ResidentNoticesScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = BpsGold),
                     modifier = Modifier.testTag("confirm_duplicate_btn")
                 ) {
-                    Text("Duplicar", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold)
+                    Text("Duplicar p/ Amanhã", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { noticeToDuplicate = null }) {
-                    Text("Cancelar")
+                Row {
+                    TextButton(
+                        onClick = {
+                            noticeToEdit = notice
+                            isDuplicateFormMode = true
+                            noticeToDuplicate = null
+                            showFormDialog = true
+                        },
+                        modifier = Modifier.testTag("customize_duplicate_btn")
+                    ) {
+                        Text("Editar antes", color = BpsGoldLight)
+                    }
+                    TextButton(onClick = { noticeToDuplicate = null }) {
+                        Text("Cancelar")
+                    }
                 }
             }
         )
@@ -456,11 +919,67 @@ fun ResidentNoticesScreen(
             }
         )
     }
+
+    if (showRetentionDialog) {
+        RetentionPolicyDialog(
+            currentRetentionDays = retentionDays,
+            eligibleNotices = eligibleForPurge,
+            onSelectRetentionDays = { days -> viewModel.updateNoticeRetentionDays(context, days) },
+            onRequestPurge = {
+                showRetentionDialog = false
+                showPurgeConfirmDialog = true
+            },
+            onDismiss = { showRetentionDialog = false }
+        )
+    }
+
+    if (showPurgeConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showPurgeConfirmDialog = false },
+            modifier = Modifier.testTag("confirm_purge_dialog"),
+            icon = { Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = StatusError) },
+            title = { Text("Confirmar Limpeza de Retenção?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Deseja excluir permanentemente ${eligibleForPurge.size} aviso(s) concluído(s) ou cancelado(s) com mais de $retentionDays dias?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.purgeExpiredNoticesConfirmed(context, eligibleForPurge)
+                        showPurgeConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusError),
+                    modifier = Modifier.testTag("confirm_purge_btn")
+                ) {
+                    Text("Remover Antigos", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPurgeConfirmDialog = false }) {
+                    Text("Manter")
+                }
+            }
+        )
+    }
 }
 
 @Composable
+private fun SectionHeaderBanner(title: String, accentColor: Color, tag: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = accentColor,
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp).testTag(tag)
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 fun ResidentNoticeCard(
     notice: ResidentNotice,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
     onViewDetails: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
@@ -468,6 +987,7 @@ fun ResidentNoticeCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val statusColor = when (notice.status) {
         "PENDENTE" -> Color(0xFFF59E0B)
         "VISUALIZADO" -> Color(0xFF38BDF8)
@@ -485,13 +1005,11 @@ fun ResidentNoticeCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Header Row: Unit Badge + Status
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Unit Badge (ex.: B-134)
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = Color(0xFF0F172A),
@@ -507,7 +1025,6 @@ fun ResidentNoticeCard(
                     )
                 }
 
-                // Status chip
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = statusColor.copy(alpha = 0.18f),
@@ -525,7 +1042,6 @@ fun ResidentNoticeCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Type tag + Resident name
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "${notice.noticeTypeEmoji} ${notice.noticeTypeDisplayName}",
@@ -544,7 +1060,6 @@ fun ResidentNoticeCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Visitor info if applicable
             if (notice.visitorName.isNotBlank()) {
                 Text(
                     text = "Visitante: ${notice.visitorName}",
@@ -554,7 +1069,6 @@ fun ResidentNoticeCard(
                 )
             }
 
-            // Vehicle plate if applicable
             if (notice.vehiclePlate.isNotBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(imageVector = Icons.Default.DirectionsCar, contentDescription = null, tint = BpsSilver, modifier = Modifier.size(14.dp))
@@ -567,10 +1081,9 @@ fun ResidentNoticeCard(
                 }
             }
 
-            // Masked document if applicable
             if (notice.visitorDocument.isNotBlank()) {
                 Text(
-                    text = "Documento: ${notice.maskedDocument()}",
+                    text = "Documento: ${notice.maskedDocument(context)}",
                     fontSize = 11.sp,
                     color = Color(0xFF94A3B8)
                 )
@@ -578,7 +1091,6 @@ fun ResidentNoticeCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Scheduled Date & Time
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(imageVector = Icons.Default.CalendarToday, contentDescription = null, tint = BpsGold, modifier = Modifier.size(13.dp))
                 Spacer(modifier = Modifier.width(5.dp))
@@ -596,15 +1108,73 @@ fun ResidentNoticeCard(
                     text = "Obs: ${notice.additionalNotes}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2
+                    maxLines = if (isExpanded) 10 else 2
                 )
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier.padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Text(
+                        text = notice.officialHeaderIdentifier,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BpsGold
+                    )
+                    if (notice.registeredByGuardName.isNotBlank()) {
+                        Text(
+                            text = "Cadastrado por: ${notice.registeredByGuardName}",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFFCBD5E1)
+                        )
+                    }
+                    if (notice.auditTrail.isNotBlank()) {
+                        Text(
+                            text = "Histórico:\n${notice.auditTrail}",
+                            fontSize = 10.5.sp,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (notice.status == "PENDENTE") {
+                            OutlinedButton(
+                                onClick = { onQuickStatusChange("VISUALIZADO") },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("card_mark_viewed_btn_${notice.id}")
+                            ) {
+                                Text("🔵 Visualizado", fontSize = 11.sp, color = Color(0xFF38BDF8))
+                            }
+                        }
+                        if (notice.status in setOf("PENDENTE", "VISUALIZADO")) {
+                            OutlinedButton(
+                                onClick = { onQuickStatusChange("CONCLUIDO") },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("card_mark_done_btn_${notice.id}")
+                            ) {
+                                Text("🟢 Concluído", fontSize = 11.sp, color = StatusOk)
+                            }
+                            OutlinedButton(
+                                onClick = { onQuickStatusChange("CANCELADO") },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("card_mark_cancel_btn_${notice.id}")
+                            ) {
+                                Text("🔴 Cancelar", fontSize = 11.sp, color = StatusError)
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Actions Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -612,14 +1182,29 @@ fun ResidentNoticeCard(
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(
+                        onClick = onToggleExpand,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("notice_expand_btn_${notice.id}")
+                    ) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(if (isExpanded) "Recolher" else "Expandir", fontSize = 11.sp)
+                    }
+
+                    OutlinedButton(
                         onClick = onViewDetails,
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("notice_detail_btn_${notice.id}")
                     ) {
                         Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Ver Detalhes", fontSize = 11.5.sp)
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Detalhes", fontSize = 11.sp)
                     }
 
                     if (notice.status == "PENDENTE") {
@@ -631,745 +1216,21 @@ fun ResidentNoticeCard(
                             modifier = Modifier.testTag("notice_quick_done_btn_${notice.id}")
                         ) {
                             Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Atendido", fontSize = 11.5.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Atendido", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    IconButton(onClick = onDuplicate, modifier = Modifier.size(32.dp).testTag("notice_duplicate_btn_${notice.id}")) {
+                    IconButton(onClick = onDuplicate, modifier = Modifier.size(36.dp).testTag("notice_duplicate_btn_${notice.id}")) {
                         Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Duplicar aviso", tint = BpsGold, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp).testTag("notice_edit_btn_${notice.id}")) {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(36.dp).testTag("notice_edit_btn_${notice.id}")) {
                         Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar aviso", tint = BpsSilver, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp).testTag("notice_delete_btn_${notice.id}")) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp).testTag("notice_delete_btn_${notice.id}")) {
                         Icon(imageVector = Icons.Default.Delete, contentDescription = "Excluir aviso", tint = StatusError.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
-@Composable
-fun ResidentNoticeFormDialog(
-    initialNotice: ResidentNotice?,
-    employees: List<com.example.data.model.Employee>,
-    onDismiss: () -> Unit,
-    onSave: (ResidentNotice) -> Unit
-) {
-    var block by remember { mutableStateOf(initialNotice?.block ?: "A") }
-    var unitNumberInput by remember { mutableStateOf(initialNotice?.unitNumber ?: "001") }
-    var residentName by remember { mutableStateOf(initialNotice?.residentName ?: "") }
-    var noticeType by remember { mutableStateOf(initialNotice?.noticeType ?: "VISITA_PROGRAMADA") }
-
-    var visitorName by remember { mutableStateOf(initialNotice?.visitorName ?: "") }
-    var visitorDocument by remember { mutableStateOf(initialNotice?.visitorDocument ?: "") }
-    var vehiclePlate by remember { mutableStateOf(initialNotice?.vehiclePlate ?: "") }
-    var vehicleModel by remember { mutableStateOf(initialNotice?.vehicleModel ?: "") }
-
-    val defaultDateIso = remember {
-        initialNotice?.scheduledDate ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-    }
-    var scheduledDateIso by remember { mutableStateOf(defaultDateIso) }
-    var scheduledTime by remember { mutableStateOf(initialNotice?.scheduledTime ?: "") }
-    var additionalNotes by remember { mutableStateOf(initialNotice?.additionalNotes ?: "") }
-
-    var guardName by remember {
-        mutableStateOf(
-            initialNotice?.registeredByGuardName?.ifBlank { null }
-                ?: employees.firstOrNull()?.name
-                ?: "Porteiro"
-        )
-    }
-
-    var validationError by remember { mutableStateOf<String?>(null) }
-
-    val noticeTypes = listOf(
-        "VISITA_PROGRAMADA" to "Visita programada",
-        "PRESTADOR_SERVICO" to "Prestador de serviço",
-        "ENTREGA" to "Entrega",
-        "AUTORIZACAO_ENTRADA" to "Autorização de entrada",
-        "MANUTENCAO" to "Manutenção",
-        "OUTRO" to "Outro"
-    )
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .testTag("notice_form_dialog"),
-            shape = RoundedCornerShape(18.dp),
-            color = BpsDarkBg,
-            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Campaign, contentDescription = null, tint = BpsGold, modifier = Modifier.size(22.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (initialNotice == null) "Novo Aviso de Morador" else "Editar Aviso #${initialNotice.id}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
-                        }
-                        IconButton(onClick = onDismiss, modifier = Modifier.testTag("close_notice_form_btn")) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Fechar", tint = Color.White)
-                        }
-                    }
-                }
-
-                // Scrollable Form Content
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (validationError != null) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = StatusError.copy(alpha = 0.18f),
-                            border = BorderStroke(1.dp, StatusError)
-                        ) {
-                            Text(
-                                text = validationError!!,
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(10.dp)
-                            )
-                        }
-                    }
-
-                    // 1. Bloco e Unidade
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "1. Bloco e Unidade *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                FilterChip(
-                                    selected = block == "A",
-                                    onClick = { block = "A" },
-                                    label = { Text("BLOCO A (144 un)", fontWeight = FontWeight.Bold) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = BpsGoldDark,
-                                        selectedLabelColor = Color.White
-                                    ),
-                                    modifier = Modifier.testTag("form_block_A")
-                                )
-                                FilterChip(
-                                    selected = block == "B",
-                                    onClick = { block = "B" },
-                                    label = { Text("BLOCO B (144 un)", fontWeight = FontWeight.Bold) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = BpsGoldDark,
-                                        selectedLabelColor = Color.White
-                                    ),
-                                    modifier = Modifier.testTag("form_block_B")
-                                )
-                            }
-
-                            // Quick unit input & suggested shortcuts
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = unitNumberInput,
-                                    onValueChange = { input ->
-                                        val digits = input.filter { it.isDigit() }.take(3)
-                                        unitNumberInput = digits
-                                    },
-                                    label = { Text("Número da Unidade (001 a 144)") },
-                                    placeholder = { Text("Ex: 134") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_unit_input")
-                                )
-
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFF0F172A),
-                                    border = BorderStroke(1.dp, BpsGold)
-                                ) {
-                                    val formatted = CondoUnitsHelper.parseUnitNumber(unitNumberInput) ?: "---"
-                                    Text(
-                                        text = "$block-$formatted",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = BpsGoldLight,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 2. Identificação do Morador Responsável
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "2. Morador(a) Responsável *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            OutlinedTextField(
-                                value = residentName,
-                                onValueChange = { residentName = it },
-                                placeholder = { Text("Nome do morador que autorizou (ex: Karla)") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_resident_input")
-                            )
-                        }
-                    }
-
-                    // 3. Tipo de Aviso
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "3. Tipo de Ocorrência / Aviso *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                noticeTypes.forEach { (typeKey, typeLabel) ->
-                                    val isSelected = noticeType == typeKey
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { noticeType = typeKey },
-                                        label = { Text(typeLabel, fontSize = 11.5.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = BpsGoldDark,
-                                            selectedLabelColor = Color.White
-                                        ),
-                                        modifier = Modifier.testTag("form_type_$typeKey")
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. Informações do Visitante / Prestador / Veículo (Opcional)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "4. Informações do Visitante / Veículo (Opcional)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            OutlinedTextField(
-                                value = visitorName,
-                                onValueChange = { visitorName = it },
-                                label = { Text("Nome completo do visitante / prestador") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_visitor_input")
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = visitorDocument,
-                                    onValueChange = { visitorDocument = it },
-                                    label = { Text("Doc (RG / CPF)") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_document_input")
-                                )
-
-                                OutlinedTextField(
-                                    value = vehiclePlate,
-                                    onValueChange = { vehiclePlate = it.uppercase() },
-                                    label = { Text("Placa Veículo") },
-                                    placeholder = { Text("ABC-1234") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_plate_input")
-                                )
-                            }
-
-                            OutlinedTextField(
-                                value = vehicleModel,
-                                onValueChange = { vehicleModel = it },
-                                label = { Text("Modelo / Cor do veículo (ex: Gol Branco)") },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_vehicle_model_input")
-                            )
-                        }
-                    }
-
-                    // 5. Programação (Data e Horário)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "5. Data e Horário Previsto *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            val todayCal = Calendar.getInstance()
-                            val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-                            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayCal.time)
-                            val tomorrowStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(tomorrowCal.time)
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(
-                                    selected = scheduledDateIso == todayStr,
-                                    onClick = { scheduledDateIso = todayStr },
-                                    label = { Text("Hoje") }
-                                )
-                                FilterChip(
-                                    selected = scheduledDateIso == tomorrowStr,
-                                    onClick = { scheduledDateIso = tomorrowStr },
-                                    label = { Text("Amanhã") }
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = scheduledDateIso,
-                                    onValueChange = { scheduledDateIso = it },
-                                    label = { Text("Data (AAAA-MM-DD)") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_date_input")
-                                )
-
-                                OutlinedTextField(
-                                    value = scheduledTime,
-                                    onValueChange = { scheduledTime = it },
-                                    label = { Text("Horário (HH:mm)") },
-                                    placeholder = { Text("14:00") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_time_input")
-                                )
-                            }
-
-                            OutlinedTextField(
-                                value = additionalNotes,
-                                onValueChange = { additionalNotes = it },
-                                label = { Text("Observações adicionais para a portaria") },
-                                minLines = 2,
-                                maxLines = 3,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_notes_input")
-                            )
-                        }
-                    }
-
-                    // 6. Porteiro Responsável pelo Cadastro
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(text = "6. Porteiro Responsável pelo Registro", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                employees.forEach { emp ->
-                                    val isSelected = guardName == emp.name
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { guardName = emp.name },
-                                        label = { Text(emp.name) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = BpsGoldDark,
-                                            selectedLabelColor = Color.White
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Footer Save Action
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Cancelar")
-                        }
-
-                        Button(
-                            onClick = {
-                                val cleanUnit = CondoUnitsHelper.parseUnitNumber(unitNumberInput)
-                                if (cleanUnit == null) {
-                                    validationError = "Informe uma unidade válida de 001 a 144 para o Bloco $block."
-                                    return@Button
-                                }
-                                if (residentName.trim().isBlank()) {
-                                    validationError = "Informe o nome do morador responsável pelo aviso."
-                                    return@Button
-                                }
-                                if (scheduledDateIso.trim().isBlank()) {
-                                    validationError = "Informe a data prevista para o aviso."
-                                    return@Button
-                                }
-
-                                validationError = null
-                                val notice = (initialNotice ?: ResidentNotice(
-                                    block = block,
-                                    unitNumber = cleanUnit,
-                                    residentName = residentName.trim(),
-                                    noticeType = noticeType,
-                                    scheduledDate = scheduledDateIso.trim()
-                                )).copy(
-                                    block = block,
-                                    unitNumber = cleanUnit,
-                                    residentName = residentName.trim(),
-                                    noticeType = noticeType,
-                                    visitorName = visitorName.trim(),
-                                    visitorDocument = visitorDocument.trim(),
-                                    vehiclePlate = vehiclePlate.trim(),
-                                    vehicleModel = vehicleModel.trim(),
-                                    scheduledDate = scheduledDateIso.trim(),
-                                    scheduledTime = scheduledTime.trim(),
-                                    additionalNotes = additionalNotes.trim(),
-                                    registeredByGuardName = guardName,
-                                    lastUpdatedByGuardName = guardName,
-                                    updatedAtTimestamp = System.currentTimeMillis()
-                                )
-                                onSave(notice)
-                            },
-                            modifier = Modifier
-                                .weight(1.3f)
-                                .testTag("form_save_notice_btn"),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BpsGold)
-                        ) {
-                            Text("Salvar Aviso", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ResidentNoticeDetailDialog(
-    notice: ResidentNotice,
-    employees: List<com.example.data.model.Employee>,
-    onDismiss: () -> Unit,
-    onStatusChange: (String, String) -> Unit,
-    onEdit: () -> Unit,
-    onDuplicate: () -> Unit,
-    onDelete: () -> Unit
-) {
-    var showFullDocument by remember { mutableStateOf(false) }
-    var selectedGuard by remember {
-        mutableStateOf(employees.firstOrNull()?.name ?: "Porteiro")
-    }
-
-    val createdFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale.forLanguageTag("pt-BR"))
-    val createdStr = createdFormat.format(Date(notice.createdAtTimestamp))
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .testTag("notice_detail_dialog_${notice.id}"),
-            shape = RoundedCornerShape(18.dp),
-            color = BpsDarkBg,
-            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF0F172A),
-                                border = BorderStroke(1.2.dp, BpsGold)
-                            ) {
-                                Text(
-                                    text = notice.unitFullIdentifier,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BpsGoldLight,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Aviso #${notice.id}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
-                        }
-
-                        IconButton(onClick = onDismiss, modifier = Modifier.testTag("close_notice_detail_btn")) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Fechar", tint = Color.White)
-                        }
-                    }
-                }
-
-                // Scrollable Content
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Status row
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "Alterar Status do Aviso", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    "PENDENTE" to "🟡 Pendente",
-                                    "VISUALIZADO" to "🔵 Visualizado",
-                                    "CONCLUIDO" to "🟢 Concluído",
-                                    "CANCELADO" to "🔴 Cancelado"
-                                ).forEach { (stKey, stLabel) ->
-                                    val isSelected = notice.status == stKey
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { onStatusChange(stKey, selectedGuard) },
-                                        label = { Text(stLabel, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                                        modifier = Modifier.testTag("detail_status_$stKey")
-                                    )
-                                }
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Porteiro atuando: ", fontSize = 12.sp, color = Color.Gray)
-                                employees.forEach { emp ->
-                                    val isCur = selectedGuard == emp.name
-                                    Text(
-                                        text = emp.name,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isCur) BpsGoldLight else Color.Gray,
-                                        modifier = Modifier
-                                            .padding(horizontal = 6.dp)
-                                            .clickable { selectedGuard = emp.name }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Notice Details
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = "${notice.noticeTypeEmoji} ${notice.noticeTypeDisplayName}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = BpsGoldLight
-                            )
-
-                            HorizontalDivider(color = Color(0xFF283548), modifier = Modifier.padding(vertical = 4.dp))
-
-                            Text("👤 Morador(a): ${notice.residentName}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-
-                            if (notice.visitorName.isNotBlank()) {
-                                Text("🚶 Visitante / Prestador: ${notice.visitorName}", fontSize = 14.sp, color = Color(0xFFE2E8F0))
-                            }
-
-                            if (notice.visitorDocument.isNotBlank()) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "🪪 Documento: ${if (showFullDocument) notice.visitorDocument else notice.maskedDocument()}",
-                                        fontSize = 13.sp,
-                                        color = Color(0xFFCBD5E1)
-                                    )
-                                    IconButton(
-                                        onClick = { showFullDocument = !showFullDocument },
-                                        modifier = Modifier.size(24.dp).testTag("reveal_document_btn")
-                                    ) {
-                                        Icon(
-                                            imageVector = if (showFullDocument) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = "Alternar visibilidade do documento",
-                                            tint = BpsGold,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (notice.vehiclePlate.isNotBlank()) {
-                                Text(
-                                    text = "🚗 Veículo: ${notice.vehiclePlate} ${if (notice.vehicleModel.isNotBlank()) "(${notice.vehicleModel})" else ""}",
-                                    fontSize = 13.sp,
-                                    color = Color(0xFFCBD5E1)
-                                )
-                            }
-
-                            Text(
-                                text = "📅 Data prevista: ${notice.formattedScheduledDate()}${if (notice.scheduledTime.isNotBlank()) " às ${notice.scheduledTime}" else ""}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = BpsGold
-                            )
-
-                            if (notice.additionalNotes.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "📝 Observações: ${notice.additionalNotes}",
-                                    fontSize = 13.sp,
-                                    color = Color(0xFFCBD5E1)
-                                )
-                            }
-                        }
-                    }
-
-                    // Audit info
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "Registro & Auditoria:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Gray
-                            )
-                            Text(
-                                text = "• Cadastrado em: $createdStr ${if (notice.registeredByGuardName.isNotBlank()) "por ${notice.registeredByGuardName}" else ""}",
-                                fontSize = 11.sp,
-                                color = Color(0xFF94A3B8)
-                            )
-                            if (notice.lastUpdatedByGuardName.isNotBlank() && notice.updatedAtTimestamp != notice.createdAtTimestamp) {
-                                val updatedFormat = SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale.forLanguageTag("pt-BR"))
-                                val updatedStr = updatedFormat.format(Date(notice.updatedAtTimestamp))
-                                Text(
-                                    text = "• Última alteração em: $updatedStr por ${notice.lastUpdatedByGuardName}",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Footer Actions
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onDuplicate,
-                            modifier = Modifier.weight(1f).testTag("detail_duplicate_btn"),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Duplicar", fontSize = 12.sp)
-                        }
-
-                        Button(
-                            onClick = onEdit,
-                            modifier = Modifier.weight(1f).testTag("detail_edit_btn"),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            border = BorderStroke(1.dp, BpsGold),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Editar", color = BpsGoldLight, fontSize = 12.sp)
-                        }
-
-                        Button(
-                            onClick = onDelete,
-                            modifier = Modifier.weight(0.8f).testTag("detail_delete_btn"),
-                            colors = ButtonDefaults.buttonColors(containerColor = StatusError.copy(alpha = 0.85f)),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Excluir", color = Color.White, fontSize = 12.sp)
-                        }
                     }
                 }
             }
@@ -1420,7 +1281,8 @@ fun EmptyNoticesCard(hasFilter: Boolean, onNewNotice: () -> Unit) {
             Button(
                 onClick = onNewNotice,
                 colors = ButtonDefaults.buttonColors(containerColor = BpsGold),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color(0xFF1E1400), modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))

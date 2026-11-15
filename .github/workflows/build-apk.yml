@@ -120,13 +120,13 @@ jobs:
         shell: bash
         run: |
           RUN_NUMBER="${GITHUB_RUN_NUMBER:-1}"
-          VERSION_CODE="$((1 + RUN_NUMBER))"
+          VERSION_CODE="$((10 + RUN_NUMBER))"
 
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             RAW_TAG="${GITHUB_REF#refs/tags/}"
             VERSION_NAME="${RAW_TAG#v}"
           else
-            VERSION_NAME="1.0.${RUN_NUMBER}"
+            VERSION_NAME="1.1.${RUN_NUMBER}"
           fi
 
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
@@ -335,8 +335,9 @@ jobs:
             echo "- **Application ID:** \`com.aistudio.bpsfacilities.vjkr\`"
             echo "- **SHA-256:** \`${APK_SHA256}\`"
             echo "- **Modo de assinatura:** \`${SIGNING_MODE}\`"
-            echo "- **Envio exclusivo de PDF pelo WhatsApp**"
-            echo "- **Assinaturas nominais automáticas integradas**"
+            echo "- **Nova aba Avisos de Moradores (Blocos A e B — 288 unidades)**"
+            echo "- **Envio exclusivo de PDF pelo WhatsApp com avisos ativos integrados**"
+            echo "- **Assinaturas nominais automáticas e armazenamento offline seguro**"
           } > "$NOTES_FILE"
 
           gh release create "$TAG_NAME" "release-assets/BPS-FACILITIES-Release.apk" \

@@ -208,6 +208,10 @@ object PdfReportGenerator {
 
         val annexPageCount = if (annexPhotos.isEmpty()) 0 else (annexPhotos.size + 3) / 4
 
+        val activeRelevantNotices = residentNotices
+            .filter { it.status in setOf("PENDENTE", "VISUALIZADO") }
+            .sortedWith(compareBy<ResidentNotice> { it.scheduledDate }.thenBy { it.scheduledTime }.thenByDescending { it.id })
+
         val tempPlan = ShiftPdfDocumentPlan(
             modelName = ChecklistTemplateItem.DEFAULT_MODEL_NAME,
             postName = formState.postName.replace("*", "").trim().ifBlank { "PORTARIA" },
@@ -225,7 +229,7 @@ object PdfReportGenerator {
             linkedPdfAttachments = linkedPdfs,
             linkedPhotoAttachments = linkedPhotos,
             annexPhotos = annexPhotos,
-            residentNotices = residentNotices,
+            residentNotices = activeRelevantNotices,
             mainPageCount = 1,
             annexPageCount = annexPageCount
         )
@@ -252,8 +256,18 @@ object PdfReportGenerator {
 
     private fun computeResidentNoticesCardHeight(plan: ShiftPdfDocumentPlan): Float {
         if (plan.residentNotices.isEmpty()) return 0f
-        val count = plan.residentNotices.size.coerceAtMost(6)
-        return 26f + (count * 20f) + 8f
+        var height = 28f
+        plan.residentNotices.take(10).forEach { notice ->
+            height += if (notice.visitorName.isNotBlank() || notice.vehiclePlate.isNotBlank() || notice.additionalNotes.isNotBlank()) {
+                26f
+            } else {
+                16f
+            }
+        }
+        if (plan.residentNotices.size > 10) {
+            height += 13f
+        }
+        return height + 8f
     }
 
     private fun computeCftvCardHeight(plan: ShiftPdfDocumentPlan): Float {
@@ -742,26 +756,47 @@ object PdfReportGenerator {
                         c.drawText("📢 AVISOS IMPORTANTES DOS MORADORES (${plan.residentNotices.size}):", 35f, textY, paint)
                         textY += 15f
 
-                        paint.isFakeBoldText = false
-                        paint.textSize = 8.5f
-                        plan.residentNotices.take(6).forEach { notice ->
+                        plan.residentNotices.take(10).forEach { notice ->
                             paint.color = navyBg
+                            paint.textSize = 8.5f
                             paint.isFakeBoldText = true
                             c.drawText("[${notice.unitFullIdentifier}]", 35f, textY, paint)
 
                             paint.color = textDark
                             paint.isFakeBoldText = false
-                            val visitorInfo = if (notice.visitorName.isNotBlank()) {
-                                " • Visitante: ${notice.visitorName}${if (notice.vehiclePlate.isNotBlank()) " (${notice.vehiclePlate})" else ""}"
-                            } else ""
-                            val line = "${notice.noticeTypeDisplayName} (${notice.residentName})$visitorInfo • Data: ${notice.formattedScheduledDate()}${if (notice.scheduledTime.isNotBlank()) " às ${notice.scheduledTime}" else ""}"
-                            c.drawText(line.take(75), 90f, textY, paint)
+                            val primaryLine = "${notice.noticeTypeDisplayName} • Morador(a): ${notice.residentName} • Data: ${notice.formattedScheduledDate()}${if (notice.scheduledTime.isNotBlank()) " às ${notice.scheduledTime}" else ""}"
+                            c.drawText(primaryLine.take(74), 84f, textY, paint)
 
                             paint.color = if (notice.status == "PENDENTE") Color.rgb(180, 83, 9) else Color.rgb(3, 105, 161)
                             paint.isFakeBoldText = true
-                            c.drawText(notice.statusDisplayName.uppercase(), 500f, textY, paint)
+                            c.drawText(notice.statusDisplayName.uppercase(), 496f, textY, paint)
+                            textY += 12f
 
-                            textY += 19f
+                            val hasSecondary = notice.visitorName.isNotBlank() || notice.vehiclePlate.isNotBlank() || notice.additionalNotes.isNotBlank()
+                            if (hasSecondary) {
+                                paint.color = textMuted
+                                paint.textSize = 7.8f
+                                paint.isFakeBoldText = false
+                                val secondaryParts = buildList {
+                                    if (notice.visitorName.isNotBlank()) add("Visitante: ${notice.visitorName}")
+                                    if (notice.vehiclePlate.isNotBlank()) {
+                                        val model = if (notice.vehicleModel.isNotBlank()) " (${notice.vehicleModel})" else ""
+                                        add("Veículo: ${notice.vehiclePlate}$model")
+                                    }
+                                    if (notice.additionalNotes.isNotBlank()) add("Obs: ${notice.additionalNotes}")
+                                }
+                                c.drawText(secondaryParts.joinToString(" • ").take(88), 84f, textY, paint)
+                                textY += 14f
+                            } else {
+                                textY += 4f
+                            }
+                        }
+
+                        if (plan.residentNotices.size > 10) {
+                            paint.color = textMuted
+                            paint.textSize = 7.8f
+                            paint.isFakeBoldText = false
+                            c.drawText("+ ${plan.residentNotices.size - 10} aviso(s) adicional(is) disponível(is) na aba Avisos do aplicativo.", 35f, textY, paint)
                         }
 
                         yPos += cardHeight + 10f
@@ -1073,6 +1108,22 @@ object PdfReportGenerator {
             if (plan.linkedPhotoAttachments.isNotEmpty() || plan.linkedPdfAttachments.isNotEmpty()) {
                 allLines.add("Anexos: ${plan.linkedPhotoAttachments.size} foto(s), ${plan.linkedPdfAttachments.size} PDF(s)")
                 plan.linkedPdfAttachments.forEach { allLines.add("  PDF: ${it.displayName}") }
+            }
+        }
+        if (plan.residentNotices.isNotEmpty()) {
+            allLines.add("------------------------------------------------------------")
+            allLines.add("AVISOS IMPORTANTES DOS MORADORES (${plan.residentNotices.size}):")
+            plan.residentNotices.forEach { notice ->
+                val timePart = if (notice.scheduledTime.isNotBlank()) " as ${notice.scheduledTime}" else ""
+                val visitorPart = if (notice.visitorName.isNotBlank()) " | Visitante: ${notice.visitorName}" else ""
+                val vehiclePart = if (notice.vehiclePlate.isNotBlank()) {
+                    val model = if (notice.vehicleModel.isNotBlank()) " (${notice.vehicleModel})" else ""
+                    " | Veiculo: ${notice.vehiclePlate}$model"
+                } else ""
+                val notesPart = if (notice.additionalNotes.isNotBlank()) " | Obs: ${notice.additionalNotes}" else ""
+                allLines.add(
+                    "- [${notice.unitFullIdentifier}] ${notice.noticeTypeDisplayName} | Morador: ${notice.residentName}$visitorPart$vehiclePart | Data: ${notice.formattedScheduledDate()}$timePart | Status: ${notice.statusDisplayName.uppercase()}$notesPart"
+                )
             }
         }
         allLines.add("------------------------------------------------------------")

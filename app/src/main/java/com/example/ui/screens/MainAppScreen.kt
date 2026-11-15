@@ -158,7 +158,10 @@ fun MainAppScreen(
                 .imePadding()
         ) {
             when (selectedTab) {
-                BpsNavTab.SHIFT_HANDOVER -> ShiftHandoverScreen(viewModel = viewModel)
+                BpsNavTab.SHIFT_HANDOVER -> ShiftHandoverScreen(
+                    viewModel = viewModel,
+                    onOpenResidentNotices = { selectedTab = BpsNavTab.RESIDENT_NOTICES }
+                )
                 BpsNavTab.IMAGE_TO_PDF -> ImageToPdfScreen(viewModel = viewModel)
                 BpsNavTab.CUSTOM_TEMPLATE -> TemplateSettingsScreen(viewModel = viewModel)
                 BpsNavTab.EMPLOYEES -> EmployeeManagementScreen(viewModel = viewModel)

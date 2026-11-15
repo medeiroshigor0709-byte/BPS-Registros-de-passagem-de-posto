@@ -90,12 +90,14 @@ import com.example.ui.viewmodel.BpsViewModel
 @Composable
 fun ShiftHandoverScreen(
     viewModel: BpsViewModel,
+    onOpenResidentNotices: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val formState by viewModel.formState.collectAsStateWithLifecycle()
     val employees by viewModel.employees.collectAsStateWithLifecycle()
     val templateItems by viewModel.templateItems.collectAsStateWithLifecycle()
+    val residentNotices by viewModel.residentNotices.collectAsStateWithLifecycle()
     val attachmentFeedback by viewModel.attachmentFeedback.collectAsStateWithLifecycle()
     val pdfValidationError by viewModel.pdfValidationError.collectAsStateWithLifecycle()
 
@@ -611,6 +613,147 @@ fun ShiftHandoverScreen(
                         onDismissFeedback = { viewModel.clearAttachmentFeedback() },
                         testTagPrefix = "obs"
                     )
+                }
+            }
+        }
+
+        // 4.5. Resident Notices Summary Panel (AVISOS PARA O PRÓXIMO TURNO)
+        item {
+            val todayCal = remember { java.util.Calendar.getInstance() }
+            val tomorrowCal = remember {
+                java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1) }
+            }
+            val dateFormatter = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US) }
+            val todayIso = remember { dateFormatter.format(todayCal.time) }
+            val tomorrowIso = remember { dateFormatter.format(tomorrowCal.time) }
+
+            val activeHandoverNotices = remember(residentNotices, todayIso) {
+                residentNotices
+                    .filter { it.status in setOf("PENDENTE", "VISUALIZADO") && it.scheduledDate >= todayIso }
+                    .sortedWith(compareBy<com.example.data.model.ResidentNotice> { it.scheduledDate }.thenBy { it.scheduledTime })
+            }
+            val pendingNotices = activeHandoverNotices.count { it.status == "PENDENTE" }
+            val tomorrowVisits = activeHandoverNotices.count {
+                it.scheduledDate == tomorrowIso && it.noticeType == "VISITA_PROGRAMADA"
+            }
+            val serviceProviders = activeHandoverNotices.count { it.noticeType == "PRESTADOR_SERVICO" }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("next_shift_notices_panel"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF10192D)),
+                border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.55f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "📢 AVISOS PARA O PRÓXIMO TURNO",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = BpsGoldLight,
+                                modifier = Modifier.testTag("next_shift_notices_title")
+                            )
+                            Text(
+                                text = if (activeHandoverNotices.isEmpty()) {
+                                    "Nenhum aviso ativo pendente para esta passagem de turno."
+                                } else {
+                                    "Incluídos automaticamente no relatório PDF da passagem"
+                                },
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onOpenResidentNotices,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.6f)),
+                            modifier = Modifier.testTag("open_resident_notices_panel_btn")
+                        ) {
+                            Text("Ver Avisos", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight)
+                        }
+                    }
+
+                    if (activeHandoverNotices.isNotEmpty()) {
+                        HorizontalDivider(color = BpsGold.copy(alpha = 0.2f))
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            if (pendingNotices > 0) {
+                                Text(
+                                    text = "• $pendingNotices aviso(s) pendente(s).",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFFCD34D)
+                                )
+                            }
+                            if (tomorrowVisits > 0) {
+                                Text(
+                                    text = "• $tomorrowVisits visita(s) programada(s) para amanhã.",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                            }
+                            if (serviceProviders > 0) {
+                                Text(
+                                    text = "• $serviceProviders prestador(es) de serviço aguardando atendimento.",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                            }
+                            val visualizadosCount = activeHandoverNotices.count { it.status == "VISUALIZADO" }
+                            if (visualizadosCount > 0 && pendingNotices == 0) {
+                                Text(
+                                    text = "• $visualizadosCount aviso(s) visualizado(s) aguardando conclusão.",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF7DD3FC)
+                                )
+                            }
+                        }
+
+                        activeHandoverNotices.take(3).forEach { notice ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF0B1220),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "[${notice.unitFullIdentifier}] ${notice.noticeTypeDisplayName} • ${notice.residentName}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White
+                                        )
+                                        val extra = buildList {
+                                            add("Data: ${notice.formattedScheduledDate()}${if (notice.scheduledTime.isNotBlank()) " ${notice.scheduledTime}" else ""}")
+                                            if (notice.visitorName.isNotBlank()) add("Visitante: ${notice.visitorName}")
+                                        }.joinToString(" • ")
+                                        Text(
+                                            text = extra,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                    Text(
+                                        text = notice.statusDisplayName.uppercase(),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (notice.status == "PENDENTE") Color(0xFFF59E0B) else Color(0xFF38BDF8)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
