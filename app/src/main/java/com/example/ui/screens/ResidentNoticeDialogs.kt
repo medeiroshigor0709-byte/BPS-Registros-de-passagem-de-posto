@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
+import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -61,6 +65,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,14 +74,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import com.example.data.local.CondoUnitsHelper
 import com.example.data.model.Employee
 import com.example.data.model.ResidentNotice
@@ -85,13 +94,27 @@ import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
 import com.example.ui.theme.BpsGoldLight
 import com.example.ui.theme.StatusError
-import com.example.ui.theme.StatusOk
 import com.example.util.NoticeSecurityManager
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+
+@Composable
+private fun ConfigureResponsiveDialogWindow() {
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        @Suppress("DEPRECATION")
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -166,526 +189,738 @@ fun ResidentNoticeFormDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Surface(
+        ConfigureResponsiveDialogWindow()
+
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .testTag("notice_form_dialog"),
-            shape = RoundedCornerShape(18.dp),
-            color = BpsDarkBg,
-            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+            contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+            val isCompactHeight = maxHeight < 620.dp
+            val isCompactWidth = maxWidth < 360.dp
+            val isUltraNarrow = maxWidth < 340.dp
+            val outerHorizontalPad = if (isCompactWidth) 8.dp else 14.dp
+            val outerVerticalPad = if (isCompactHeight) 6.dp else 12.dp
+            val availableModalHeight = (maxHeight - outerVerticalPad * 2).coerceAtLeast(220.dp)
+            val contentPadding = if (isCompactHeight || isCompactWidth) 10.dp else 14.dp
+            val sectionSpacing = if (isCompactHeight) 8.dp else 12.dp
+            val cardPadding = if (isCompactHeight || isCompactWidth) 10.dp else 12.dp
+            val unitGridHeight = when {
+                maxHeight < 420.dp -> 108.dp
+                isCompactHeight -> 128.dp
+                else -> 156.dp
+            }
+            val unitGridColumns = if (isUltraNarrow) 3 else 4
+
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = outerHorizontalPad, vertical = outerVerticalPad)
+                    .widthIn(max = 640.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = availableModalHeight)
+                    .testTag("notice_form_dialog"),
+                shape = RoundedCornerShape(18.dp),
+                color = BpsDarkBg,
+                border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.55f))
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // 1. CABEÇALHO FIXO
+                    Surface(
+                        color = Color(0xFF070B14),
+                        modifier = Modifier.testTag("form_header_container")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Campaign,
-                                contentDescription = null,
-                                tint = BpsGold,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = when {
-                                    isDuplicateDraft -> "Duplicar Aviso (Confirmar Dados)"
-                                    initialNotice == null -> "Novo Aviso de Morador"
-                                    else -> "Editar Aviso #${initialNotice.id}"
-                                },
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
-                        }
-                        IconButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.size(48.dp).testTag("close_notice_form_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Fechar", tint = Color.White)
-                        }
-                    }
-                }
-
-                // Scrollable Form Content
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (validationError != null) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = StatusError.copy(alpha = 0.18f),
-                            border = BorderStroke(1.dp, StatusError),
-                            modifier = Modifier.fillMaxWidth().testTag("form_validation_error")
-                        ) {
-                            Text(
-                                text = validationError!!,
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(10.dp)
-                            )
-                        }
-                    }
-
-                    // 1. Bloco e Unidade (001 a 144)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "1. Bloco e Unidade *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
+                        Column {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                FilterChip(
-                                    selected = block == "A",
-                                    onClick = { block = "A" },
-                                    label = { Text("BLOCO A (144 un)", fontWeight = FontWeight.Bold) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = BpsGoldDark,
-                                        selectedLabelColor = Color.White
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = contentPadding,
+                                        vertical = if (isCompactHeight) 8.dp else 10.dp
                                     ),
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("form_block_A")
-                                )
-                                FilterChip(
-                                    selected = block == "B",
-                                    onClick = { block = "B" },
-                                    label = { Text("BLOCO B (144 un)", fontWeight = FontWeight.Bold) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = BpsGoldDark,
-                                        selectedLabelColor = Color.White
-                                    ),
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("form_block_B")
-                                )
-                            }
-
-                            // Direct unit search / input (accepts "134", "025", "A-025", "B-134")
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                OutlinedTextField(
-                                    value = unitNumberInput,
-                                    onValueChange = { input ->
-                                        val upper = input.trim().uppercase()
-                                        if (upper.startsWith("A")) block = "A"
-                                        else if (upper.startsWith("B")) block = "B"
-                                        val filteredChars = upper.filter { it.isDigit() || it == 'A' || it == 'B' || it == '-' }.take(5)
-                                        unitNumberInput = filteredChars
-                                    },
-                                    label = { Text("Apartamento (ex: B-134 ou 134)") },
-                                    placeholder = { Text("Ex: 134, A-025, B-010") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_unit_input")
-                                )
-
-                                val formatted = CondoUnitsHelper.parseUnitNumber(unitNumberInput) ?: "---"
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFF0F172A),
-                                    border = BorderStroke(1.dp, BpsGold)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Campaign,
+                                        contentDescription = "Aviso de Morador",
+                                        tint = BpsGold,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "$block-$formatted",
+                                        text = when {
+                                            isDuplicateDraft -> "Duplicar Aviso (Confirmar Dados)"
+                                            initialNotice == null -> "Novo Aviso de Morador"
+                                            else -> "Editar Aviso #${initialNotice.id}"
+                                        },
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = BpsGoldLight,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                                        fontSize = 16.sp,
+                                        color = Color.White,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("close_notice_form_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Fechar",
+                                        tint = Color.White
                                     )
                                 }
                             }
+                            HorizontalDivider(color = BpsGold.copy(alpha = 0.25f))
+                        }
+                    }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                    // 2. CONTEÚDO COM ROLAGEM INDEPENDENTE
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(contentPadding)
+                            .testTag("form_scroll_content"),
+                        verticalArrangement = Arrangement.spacedBy(sectionSpacing)
+                    ) {
+                        if (validationError != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = StatusError.copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, StatusError),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("form_validation_error")
                             ) {
                                 Text(
-                                    text = "Selecionar na lista (${CondoUnitsHelper.UNITS_PER_BLOCK} unidades do Bloco $block):",
-                                    fontSize = 11.5.sp,
-                                    color = Color(0xFF94A3B8)
+                                    text = validationError!!,
+                                    color = Color(0xFFFCA5A5),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(10.dp)
                                 )
-                                TextButton(
-                                    onClick = { showUnitGrid = !showUnitGrid },
-                                    modifier = Modifier.testTag("toggle_unit_grid_btn")
+                            }
+                        }
+
+                        // 1. Bloco e Unidade (001 a 144)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.dp, Color(0xFF283548)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "1. Bloco e Unidade *",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = BpsGoldLight
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(
-                                        text = if (showUnitGrid) "Ocultar lista" else "Mostrar 001–144",
-                                        color = BpsGold,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold
+                                    FilterChip(
+                                        selected = block == "A",
+                                        onClick = { block = "A" },
+                                        label = {
+                                            Text(
+                                                text = "BLOCO A (144 un)",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = if (isCompactWidth) 11.sp else 12.5.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BpsGoldDark,
+                                            selectedLabelColor = Color.White
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp)
+                                            .testTag("form_block_A")
+                                    )
+                                    FilterChip(
+                                        selected = block == "B",
+                                        onClick = { block = "B" },
+                                        label = {
+                                            Text(
+                                                text = "BLOCO B (144 un)",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = if (isCompactWidth) 11.sp else 12.5.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BpsGoldDark,
+                                            selectedLabelColor = Color.White
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp)
+                                            .testTag("form_block_B")
                                     )
                                 }
-                            }
 
-                            if (showUnitGrid) {
-                                val currentParsed = CondoUnitsHelper.parseUnitNumber(unitNumberInput)
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(4),
+                                // Direct unit search / input (accepts "134", "025", "A-025", "B-134")
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = unitNumberInput,
+                                        onValueChange = { input ->
+                                            val upper = input.trim().uppercase()
+                                            if (upper.startsWith("A")) block = "A"
+                                            else if (upper.startsWith("B")) block = "B"
+                                            val filteredChars = upper
+                                                .filter { it.isDigit() || it == 'A' || it == 'B' || it == '-' }
+                                                .take(5)
+                                            unitNumberInput = filteredChars
+                                        },
+                                        label = {
+                                            Text(
+                                                text = "Apartamento (ex: B-134 ou 134)",
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        placeholder = { Text("Ex: 134, A-025, B-010") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("form_unit_input")
+                                    )
+
+                                    val formatted = CondoUnitsHelper.parseUnitNumber(unitNumberInput) ?: "---"
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFF0F172A),
+                                        border = BorderStroke(1.dp, BpsGold)
+                                    ) {
+                                        Text(
+                                            text = "$block-$formatted",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = BpsGoldLight,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp)
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Selecionar na lista (${CondoUnitsHelper.UNITS_PER_BLOCK} unidades do Bloco $block):",
+                                        fontSize = 11.5.sp,
+                                        color = Color(0xFF94A3B8),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        onClick = { showUnitGrid = !showUnitGrid },
+                                        modifier = Modifier.testTag("toggle_unit_grid_btn")
+                                    ) {
+                                        Text(
+                                            text = if (showUnitGrid) "Ocultar lista" else "Mostrar 001–144",
+                                            color = BpsGold,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                if (showUnitGrid) {
+                                    val currentParsed = CondoUnitsHelper.parseUnitNumber(unitNumberInput)
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(unitGridColumns),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(unitGridHeight)
+                                            .testTag("unit_selector_grid"),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        items(filteredUnits, key = { "$block-$it" }) { unit ->
+                                            val isUnitSelected = currentParsed == unit
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isUnitSelected) BpsGold else Color(0xFF0F172A),
+                                                border = BorderStroke(
+                                                    1.dp,
+                                                    if (isUnitSelected) BpsGoldLight else Color(0xFF334155)
+                                                ),
+                                                modifier = Modifier
+                                                    .clickable { unitNumberInput = unit }
+                                                    .testTag("unit_grid_item_${block}_$unit")
+                                            ) {
+                                                Text(
+                                                    text = "$block-$unit",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isUnitSelected) Color(0xFF1E1400) else Color(0xFFE2E8F0),
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Identificação do Morador Responsável
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.dp, Color(0xFF283548)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "2. Morador(a) Responsável *",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = BpsGoldLight
+                                )
+
+                                OutlinedTextField(
+                                    value = residentName,
+                                    onValueChange = { residentName = it },
+                                    placeholder = { Text("Nome do morador que autorizou (ex: Karla)") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(160.dp)
-                                        .testTag("unit_selector_grid"),
+                                        .testTag("form_resident_input")
+                                )
+                            }
+                        }
+
+                        // 3. Tipo de Aviso
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.dp, Color(0xFF283548)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "3. Tipo de Ocorrência / Aviso *",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = BpsGoldLight
+                                )
+
+                                FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    items(filteredUnits, key = { "$block-$it" }) { unit ->
-                                        val isUnitSelected = currentParsed == unit
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isUnitSelected) BpsGold else Color(0xFF0F172A),
-                                            border = BorderStroke(
-                                                1.dp,
-                                                if (isUnitSelected) BpsGoldLight else Color(0xFF334155)
+                                    noticeTypes.forEach { (typeKey, typeLabel) ->
+                                        val isSelected = noticeType == typeKey
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { noticeType = typeKey },
+                                            label = { Text(typeLabel, fontSize = 11.5.sp) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = BpsGoldDark,
+                                                selectedLabelColor = Color.White
                                             ),
+                                            modifier = Modifier.testTag("form_type_$typeKey")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Informações do Visitante / Prestador / Veículo (Opcional)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.dp, Color(0xFF283548)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "4. Informações do Visitante / Veículo (Opcional)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = BpsGoldLight
+                                )
+
+                                OutlinedTextField(
+                                    value = visitorName,
+                                    onValueChange = { visitorName = it },
+                                    label = { Text("Nome completo do visitante / prestador") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("form_visitor_input")
+                                )
+
+                                if (isUltraNarrow) {
+                                    OutlinedTextField(
+                                        value = visitorDocument,
+                                        onValueChange = { visitorDocument = it },
+                                        label = { Text("Doc (RG / CPF)") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("form_document_input")
+                                    )
+                                    OutlinedTextField(
+                                        value = vehiclePlate,
+                                        onValueChange = { vehiclePlate = it.uppercase() },
+                                        label = { Text("Placa Veículo") },
+                                        placeholder = { Text("ABC-1234") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("form_plate_input")
+                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = visitorDocument,
+                                            onValueChange = { visitorDocument = it },
+                                            label = { Text("Doc (RG / CPF)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            singleLine = true,
                                             modifier = Modifier
-                                                .clickable { unitNumberInput = unit }
-                                                .testTag("unit_grid_item_${block}_$unit")
-                                        ) {
-                                            Text(
-                                                text = "$block-$unit",
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isUnitSelected) Color(0xFF1E1400) else Color(0xFFE2E8F0),
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
-                                            )
-                                        }
+                                                .weight(1f)
+                                                .testTag("form_document_input")
+                                        )
+
+                                        OutlinedTextField(
+                                            value = vehiclePlate,
+                                            onValueChange = { vehiclePlate = it.uppercase() },
+                                            label = { Text("Placa Veículo", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            placeholder = { Text("ABC-1234") },
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("form_plate_input")
+                                        )
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = vehicleModel,
+                                    onValueChange = { vehicleModel = it },
+                                    label = { Text("Modelo / Cor do veículo (ex: Gol Branco)") },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("form_vehicle_model_input")
+                                )
+                            }
+                        }
+
+                        // 5. Programação (Data com Calendário e Horário com Seletor)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.dp, Color(0xFF283548)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "5. Data e Horário Previsto *",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = BpsGoldLight
+                                )
+
+                                val todayCal = Calendar.getInstance()
+                                val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+                                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayCal.time)
+                                val tomorrowStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(tomorrowCal.time)
+
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = scheduledDateIso == todayStr,
+                                        onClick = { scheduledDateIso = todayStr },
+                                        label = { Text("Hoje") },
+                                        modifier = Modifier.testTag("form_quick_today")
+                                    )
+                                    FilterChip(
+                                        selected = scheduledDateIso == tomorrowStr,
+                                        onClick = { scheduledDateIso = tomorrowStr },
+                                        label = { Text("Amanhã") },
+                                        modifier = Modifier.testTag("form_quick_tomorrow")
+                                    )
+                                    OutlinedButton(
+                                        onClick = { showDatePicker = true },
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.testTag("open_date_picker_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarMonth,
+                                            contentDescription = null,
+                                            tint = BpsGold,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Calendário", fontSize = 12.sp, color = BpsGoldLight)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { showTimePicker = true },
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.testTag("open_time_picker_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AccessTime,
+                                            contentDescription = null,
+                                            tint = BpsGold,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Horário", fontSize = 12.sp, color = BpsGoldLight)
+                                    }
+                                }
+
+                                if (isUltraNarrow) {
+                                    OutlinedTextField(
+                                        value = scheduledDateIso,
+                                        onValueChange = { scheduledDateIso = it },
+                                        label = { Text("Data (AAAA-MM-DD)") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("form_date_input")
+                                    )
+                                    OutlinedTextField(
+                                        value = scheduledTime,
+                                        onValueChange = { scheduledTime = it },
+                                        label = { Text("Horário (HH:mm)") },
+                                        placeholder = { Text("14:00") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("form_time_input")
+                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = scheduledDateIso,
+                                            onValueChange = { scheduledDateIso = it },
+                                            label = { Text("Data (AAAA-MM-DD)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("form_date_input")
+                                        )
+
+                                        OutlinedTextField(
+                                            value = scheduledTime,
+                                            onValueChange = { scheduledTime = it },
+                                            label = { Text("Horário (HH:mm)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            placeholder = { Text("14:00") },
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("form_time_input")
+                                        )
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = additionalNotes,
+                                    onValueChange = { additionalNotes = it },
+                                    label = { Text("Observações adicionais para a portaria") },
+                                    minLines = 2,
+                                    maxLines = 3,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("form_notes_input")
+                                )
+                            }
+                        }
+
+                        // 6. Porteiro Responsável pelo Cadastro
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.dp, Color(0xFF283548)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(cardPadding),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "6. Porteiro Responsável pelo Registro",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = BpsGoldLight
+                                )
+
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    employees.forEach { emp ->
+                                        val isSelected = guardName == emp.name
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { guardName = emp.name },
+                                            label = { Text(emp.name) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = BpsGoldDark,
+                                                selectedLabelColor = Color.White
+                                            ),
+                                            modifier = Modifier.testTag("form_guard_${emp.name}")
+                                        )
                                     }
                                 }
                             }
                         }
                     }
 
-                    // 2. Identificação do Morador Responsável
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
+                    // 3. RODAPÉ FIXO (Sempre visível acima da barra do Android e teclado)
+                    Surface(
+                        color = Color(0xFF070B14),
+                        modifier = Modifier.testTag("form_footer_container")
                     ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "2. Morador(a) Responsável *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            OutlinedTextField(
-                                value = residentName,
-                                onValueChange = { residentName = it },
-                                placeholder = { Text("Nome do morador que autorizou (ex: Karla)") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                        Column {
+                            HorizontalDivider(color = BpsGold.copy(alpha = 0.25f))
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .testTag("form_resident_input")
-                            )
-                        }
-                    }
-
-                    // 3. Tipo de Aviso
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "3. Tipo de Ocorrência / Aviso *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    .padding(
+                                        horizontal = contentPadding,
+                                        vertical = if (isCompactHeight) 8.dp else 10.dp
+                                    ),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                noticeTypes.forEach { (typeKey, typeLabel) ->
-                                    val isSelected = noticeType == typeKey
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { noticeType = typeKey },
-                                        label = { Text(typeLabel, fontSize = 11.5.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = BpsGoldDark,
-                                            selectedLabelColor = Color.White
-                                        ),
-                                        modifier = Modifier.testTag("form_type_$typeKey")
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("form_cancel_notice_btn"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF475569))
+                                ) {
+                                    Text(
+                                        text = "Cancelar",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                            }
-                        }
-                    }
 
-                    // 4. Informações do Visitante / Prestador / Veículo (Opcional)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "4. Informações do Visitante / Veículo (Opcional)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
+                                Button(
+                                    onClick = {
+                                        val cleanUnit = CondoUnitsHelper.parseUnitNumber(unitNumberInput)
+                                        if (cleanUnit == null) {
+                                            validationError = "Informe uma unidade válida de 001 a 144 para o Bloco $block."
+                                            return@Button
+                                        }
+                                        if (residentName.trim().isBlank()) {
+                                            validationError = "Informe o nome do morador responsável pelo aviso."
+                                            return@Button
+                                        }
+                                        val dateClean = scheduledDateIso.trim()
+                                        if (!dateClean.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$"))) {
+                                            validationError = "Informe uma data válida no formato AAAA-MM-DD."
+                                            return@Button
+                                        }
 
-                            OutlinedTextField(
-                                value = visitorName,
-                                onValueChange = { visitorName = it },
-                                label = { Text("Nome completo do visitante / prestador") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_visitor_input")
-                            )
+                                        validationError = null
+                                        val now = System.currentTimeMillis()
+                                        val base = if (isDuplicateDraft || initialNotice == null) {
+                                            ResidentNotice(
+                                                block = block,
+                                                unitNumber = cleanUnit,
+                                                residentName = residentName.trim(),
+                                                noticeType = noticeType,
+                                                scheduledDate = dateClean,
+                                                createdAtTimestamp = now
+                                            )
+                                        } else {
+                                            initialNotice
+                                        }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = visitorDocument,
-                                    onValueChange = { visitorDocument = it },
-                                    label = { Text("Doc (RG / CPF)") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_document_input")
-                                )
-
-                                OutlinedTextField(
-                                    value = vehiclePlate,
-                                    onValueChange = { vehiclePlate = it.uppercase() },
-                                    label = { Text("Placa Veículo") },
-                                    placeholder = { Text("ABC-1234") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_plate_input")
-                                )
-                            }
-
-                            OutlinedTextField(
-                                value = vehicleModel,
-                                onValueChange = { vehicleModel = it },
-                                label = { Text("Modelo / Cor do veículo (ex: Gol Branco)") },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_vehicle_model_input")
-                            )
-                        }
-                    }
-
-                    // 5. Programação (Data com Calendário e Horário com Seletor)
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(text = "5. Data e Horário Previsto *", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            val todayCal = Calendar.getInstance()
-                            val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-                            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayCal.time)
-                            val tomorrowStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(tomorrowCal.time)
-
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FilterChip(
-                                    selected = scheduledDateIso == todayStr,
-                                    onClick = { scheduledDateIso = todayStr },
-                                    label = { Text("Hoje") },
-                                    modifier = Modifier.testTag("form_quick_today")
-                                )
-                                FilterChip(
-                                    selected = scheduledDateIso == tomorrowStr,
-                                    onClick = { scheduledDateIso = tomorrowStr },
-                                    label = { Text("Amanhã") },
-                                    modifier = Modifier.testTag("form_quick_tomorrow")
-                                )
-                                OutlinedButton(
-                                    onClick = { showDatePicker = true },
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                    modifier = Modifier.testTag("open_date_picker_btn")
-                                ) {
-                                    Icon(imageVector = Icons.Default.CalendarMonth, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Calendário", fontSize = 12.sp, color = BpsGoldLight)
-                                }
-                                OutlinedButton(
-                                    onClick = { showTimePicker = true },
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                    modifier = Modifier.testTag("open_time_picker_btn")
-                                ) {
-                                    Icon(imageVector = Icons.Default.AccessTime, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Horário", fontSize = 12.sp, color = BpsGoldLight)
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = scheduledDateIso,
-                                    onValueChange = { scheduledDateIso = it },
-                                    label = { Text("Data (AAAA-MM-DD)") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_date_input")
-                                )
-
-                                OutlinedTextField(
-                                    value = scheduledTime,
-                                    onValueChange = { scheduledTime = it },
-                                    label = { Text("Horário (HH:mm)") },
-                                    placeholder = { Text("14:00") },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("form_time_input")
-                                )
-                            }
-
-                            OutlinedTextField(
-                                value = additionalNotes,
-                                onValueChange = { additionalNotes = it },
-                                label = { Text("Observações adicionais para a portaria") },
-                                minLines = 2,
-                                maxLines = 3,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("form_notes_input")
-                            )
-                        }
-                    }
-
-                    // 6. Porteiro Responsável pelo Cadastro
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                        border = BorderStroke(1.dp, Color(0xFF283548)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(text = "6. Porteiro Responsável pelo Registro", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BpsGoldLight)
-
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                employees.forEach { emp ->
-                                    val isSelected = guardName == emp.name
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { guardName = emp.name },
-                                        label = { Text(emp.name) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = BpsGoldDark,
-                                            selectedLabelColor = Color.White
+                                        val notice = base.copy(
+                                            block = block,
+                                            unitNumber = cleanUnit,
+                                            residentName = residentName.trim(),
+                                            noticeType = noticeType,
+                                            visitorName = visitorName.trim(),
+                                            visitorDocument = visitorDocument.trim(),
+                                            vehiclePlate = vehiclePlate.trim(),
+                                            vehicleModel = vehicleModel.trim(),
+                                            scheduledDate = dateClean,
+                                            scheduledTime = scheduledTime.trim(),
+                                            additionalNotes = additionalNotes.trim(),
+                                            registeredByGuardName = if (isDuplicateDraft || initialNotice == null) guardName else base.registeredByGuardName,
+                                            lastUpdatedByGuardName = guardName,
+                                            updatedAtTimestamp = now
                                         )
+                                        onSave(notice)
+                                    },
+                                    modifier = Modifier
+                                        .weight(1.3f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("form_save_notice_btn"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BpsGold)
+                                ) {
+                                    Text(
+                                        text = if (isDuplicateDraft) "Confirmar & Salvar" else "Salvar Aviso",
+                                        color = Color(0xFF1E1400),
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
-                        }
-                    }
-                }
-
-                // Footer Save Action (Large >=48.dp touch targets)
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Cancelar")
-                        }
-
-                        Button(
-                            onClick = {
-                                val cleanUnit = CondoUnitsHelper.parseUnitNumber(unitNumberInput)
-                                if (cleanUnit == null) {
-                                    validationError = "Informe uma unidade válida de 001 a 144 para o Bloco $block."
-                                    return@Button
-                                }
-                                if (residentName.trim().isBlank()) {
-                                    validationError = "Informe o nome do morador responsável pelo aviso."
-                                    return@Button
-                                }
-                                val dateClean = scheduledDateIso.trim()
-                                if (!dateClean.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$"))) {
-                                    validationError = "Informe uma data válida no formato AAAA-MM-DD."
-                                    return@Button
-                                }
-
-                                validationError = null
-                                val now = System.currentTimeMillis()
-                                val base = if (isDuplicateDraft || initialNotice == null) {
-                                    ResidentNotice(
-                                        block = block,
-                                        unitNumber = cleanUnit,
-                                        residentName = residentName.trim(),
-                                        noticeType = noticeType,
-                                        scheduledDate = dateClean,
-                                        createdAtTimestamp = now
-                                    )
-                                } else {
-                                    initialNotice
-                                }
-
-                                val notice = base.copy(
-                                    block = block,
-                                    unitNumber = cleanUnit,
-                                    residentName = residentName.trim(),
-                                    noticeType = noticeType,
-                                    visitorName = visitorName.trim(),
-                                    visitorDocument = visitorDocument.trim(),
-                                    vehiclePlate = vehiclePlate.trim(),
-                                    vehicleModel = vehicleModel.trim(),
-                                    scheduledDate = dateClean,
-                                    scheduledTime = scheduledTime.trim(),
-                                    additionalNotes = additionalNotes.trim(),
-                                    registeredByGuardName = if (isDuplicateDraft || initialNotice == null) guardName else base.registeredByGuardName,
-                                    lastUpdatedByGuardName = guardName,
-                                    updatedAtTimestamp = now
-                                )
-                                onSave(notice)
-                            },
-                            modifier = Modifier
-                                .weight(1.3f)
-                                .heightIn(min = 48.dp)
-                                .testTag("form_save_notice_btn"),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BpsGold)
-                        ) {
-                            Text(
-                                text = if (isDuplicateDraft) "Confirmar & Salvar Cópia" else "Salvar Aviso",
-                                color = Color(0xFF1E1400),
-                                fontWeight = FontWeight.Bold
-                            )
                         }
                     }
                 }
@@ -788,19 +1023,37 @@ fun ResidentNoticeDetailDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Surface(
+        ConfigureResponsiveDialogWindow()
+
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .testTag("notice_detail_dialog_${notice.id}"),
-            shape = RoundedCornerShape(18.dp),
-            color = BpsDarkBg,
-            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+            contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            val isCompactHeight = maxHeight < 620.dp
+            val isCompactWidth = maxWidth < 360.dp
+            val outerHorizontalPad = if (isCompactWidth) 8.dp else 14.dp
+            val outerVerticalPad = if (isCompactHeight) 6.dp else 12.dp
+            val availableModalHeight = (maxHeight - outerVerticalPad * 2).coerceAtLeast(220.dp)
+
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = outerHorizontalPad, vertical = outerVerticalPad)
+                    .widthIn(max = 640.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = availableModalHeight)
+                    .testTag("notice_detail_dialog_${notice.id}"),
+                shape = RoundedCornerShape(18.dp),
+                color = BpsDarkBg,
+                border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.55f))
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                 // Header
                 Surface(color = Color(0xFF070B14)) {
                     Row(
@@ -852,7 +1105,8 @@ fun ResidentNoticeDetailDialog(
                 // Scrollable Content
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1076,6 +1330,7 @@ fun ResidentNoticeDetailDialog(
                     }
                 }
             }
+        }
         }
     }
 }

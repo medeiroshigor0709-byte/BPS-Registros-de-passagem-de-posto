@@ -1612,5 +1612,213 @@ class BpsUpdateFeaturesTest {
         composeTestRule.onNodeWithTag("bps_bottom_navigation").assertIsDisplayed()
         composeTestRule.onNodeWithTag("new_notice_button").assertIsDisplayed()
     }
+
+    // 38. Modal Novo Aviso responsivo em celular pequeno (w320dp-h533dp): botões fixos visíveis e zero corte horizontal
+    @Test
+    @Config(sdk = [36], qualifiers = "w320dp-h533dp")
+    fun `test 38 - ResidentNoticeFormDialog fits small 320x533 screen with fixed header and footer buttons visible`() {
+        val employees = listOf(
+            Employee(id = 1, name = "Higor", role = "Porteiro", shift = "Noturno"),
+            Employee(id = 2, name = "Cláudia", role = "Porteira", shift = "Diurno")
+        )
+
+        composeTestRule.setContent {
+            MyApplicationTheme(darkTheme = true) {
+                com.example.ui.screens.ResidentNoticeFormDialog(
+                    initialNotice = null,
+                    employees = employees,
+                    onDismiss = {},
+                    onSave = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("notice_form_dialog").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_header_container").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_footer_container").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_cancel_notice_btn").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_save_notice_btn").assertIsDisplayed()
+
+        val dialogBounds = composeTestRule.onNodeWithTag("notice_form_dialog").getBoundsInRoot()
+        val headerBoundsBefore = composeTestRule.onNodeWithTag("form_header_container").getBoundsInRoot()
+        val footerBoundsBefore = composeTestRule.onNodeWithTag("form_footer_container").getBoundsInRoot()
+        val cancelBounds = composeTestRule.onNodeWithTag("form_cancel_notice_btn").getBoundsInRoot()
+        val saveBounds = composeTestRule.onNodeWithTag("form_save_notice_btn").getBoundsInRoot()
+
+        assertTrue("Modal left (${dialogBounds.left.value}) must not clip horizontally", dialogBounds.left.value >= -0.5f)
+        assertTrue("Modal right (${dialogBounds.right.value}) must fit 320dp width", dialogBounds.right.value <= 320.5f)
+        assertTrue("Modal bottom (${dialogBounds.bottom.value}) must fit 533dp height", dialogBounds.bottom.value <= 533.5f)
+        val cancelHeight = cancelBounds.bottom.value - cancelBounds.top.value
+        val saveHeight = saveBounds.bottom.value - saveBounds.top.value
+        assertTrue("Cancel button height ($cancelHeight) >= 48dp", cancelHeight >= 47.5f)
+        assertTrue("Save button height ($saveHeight) >= 48dp", saveHeight >= 47.5f)
+        assertTrue("Footer must sit strictly inside visible modal bottom", footerBoundsBefore.bottom.value <= dialogBounds.bottom.value + 0.5f)
+
+        // Scroll all the way down inside the form and verify header & footer stay fixed
+        composeTestRule.onNodeWithTag("form_guard_Higor").performScrollTo().assertIsDisplayed()
+        composeTestRule.waitForIdle()
+
+        val headerBoundsAfter = composeTestRule.onNodeWithTag("form_header_container").getBoundsInRoot()
+        val footerBoundsAfter = composeTestRule.onNodeWithTag("form_footer_container").getBoundsInRoot()
+        assertEquals(headerBoundsBefore.top.value, headerBoundsAfter.top.value, 0.5f)
+        assertEquals(footerBoundsBefore.bottom.value, footerBoundsAfter.bottom.value, 0.5f)
+        composeTestRule.onNodeWithTag("form_cancel_notice_btn").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_save_notice_btn").assertIsDisplayed()
+    }
+
+    // 39. Modal Novo Aviso com barras do sistema + abertura/fechamento do teclado virtual (IME) + salvamento completo
+    @Test
+    @Config(sdk = [36], qualifiers = "w360dp-h640dp")
+    fun `test 39 - ResidentNoticeFormDialog adapts to Android system bars and virtual keyboard IME and saves all fields`() {
+        val employees = listOf(
+            Employee(id = 1, name = "Higor", role = "Porteiro", shift = "Noturno"),
+            Employee(id = 2, name = "Cláudia", role = "Porteira", shift = "Diurno")
+        )
+        var savedNotice: com.example.data.model.ResidentNotice? = null
+        var statusTopDp = 0f
+        var navBottomDp = 0f
+        var imeBottomDp = 0f
+        var statusTopPx = 0
+        var navBottomPx = 0
+        var imeBottomPx = 0
+
+        composeTestRule.setContent {
+            val density = LocalDensity.current
+            statusTopPx = with(density) { 28.dp.roundToPx() }
+            navBottomPx = with(density) { 48.dp.roundToPx() }
+            imeBottomPx = with(density) { 240.dp.roundToPx() }
+            statusTopDp = with(density) { statusTopPx.toDp().value }
+            navBottomDp = with(density) { navBottomPx.toDp().value }
+            imeBottomDp = with(density) { imeBottomPx.toDp().value }
+
+            MyApplicationTheme(darkTheme = true) {
+                com.example.ui.screens.ResidentNoticeFormDialog(
+                    initialNotice = null,
+                    employees = employees,
+                    onDismiss = {},
+                    onSave = { savedNotice = it }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        // Find the active Dialog window decorView via Robolectric Shadows / WindowManager or active dialog
+        val dialogWindow = org.robolectric.shadows.ShadowDialog.getLatestDialog()?.window
+        assertNotNull("Expected active Dialog window", dialogWindow)
+        val decorView = dialogWindow!!.decorView
+
+        // 1. Dispatch realistic statusBar + 3-button navigationBar insets
+        composeTestRule.runOnIdle {
+            val insets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.statusBars(), Insets.of(0, statusTopPx, 0, 0))
+                .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, 0, navBottomPx))
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(decorView, insets)
+        }
+        composeTestRule.waitForIdle()
+
+        val boundsWithBars = composeTestRule.onNodeWithTag("notice_form_dialog").getBoundsInRoot()
+        val footerWithBars = composeTestRule.onNodeWithTag("form_footer_container").getBoundsInRoot()
+        assertTrue(
+            "Modal top (${boundsWithBars.top.value}) must clear status bar (${statusTopDp})",
+            boundsWithBars.top.value >= statusTopDp - 1f
+        )
+        assertTrue(
+            "Footer bottom (${footerWithBars.bottom.value}) must clear Android nav bar (${640f - navBottomDp})",
+            footerWithBars.bottom.value <= (640f - navBottomDp + 1f)
+        )
+
+        // 2. Open virtual keyboard (IME = 240dp) and verify modal shrinks above keyboard keeping Cancel/Save accessible
+        composeTestRule.runOnIdle {
+            val imeInsets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.statusBars(), Insets.of(0, statusTopPx, 0, 0))
+                .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, 0, navBottomPx))
+                .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, imeBottomPx))
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(decorView, imeInsets)
+        }
+        composeTestRule.waitForIdle()
+
+        val footerWithIme = composeTestRule.onNodeWithTag("form_footer_container").getBoundsInRoot()
+        assertTrue(
+            "Footer bottom (${footerWithIme.bottom.value}) must stay above virtual keyboard (${640f - imeBottomDp})",
+            footerWithIme.bottom.value <= (640f - imeBottomDp + 1f)
+        )
+        composeTestRule.onNodeWithTag("form_cancel_notice_btn").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_save_notice_btn").assertIsDisplayed()
+
+        // Edit fields while keyboard is open
+        composeTestRule.onNodeWithTag("form_block_B").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("form_unit_input").performScrollTo().performTextReplacement("134")
+        composeTestRule.onNodeWithTag("form_resident_input").performScrollTo().performTextReplacement("Karla")
+
+        // 3. Close virtual keyboard and fill remaining fields through bottom + save
+        composeTestRule.runOnIdle {
+            val closedImeInsets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.statusBars(), Insets.of(0, statusTopPx, 0, 0))
+                .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, 0, navBottomPx))
+                .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, 0))
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(decorView, closedImeInsets)
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("form_type_PRESTADOR_SERVICO").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("form_visitor_input").performScrollTo().performTextReplacement("Carlos Eduardo")
+        composeTestRule.onNodeWithTag("form_document_input").performScrollTo().performTextReplacement("12.345.678-9")
+        composeTestRule.onNodeWithTag("form_plate_input").performScrollTo().performTextReplacement("ABC-1234")
+        composeTestRule.onNodeWithTag("form_vehicle_model_input").performScrollTo().performTextReplacement("Gol Prata")
+        composeTestRule.onNodeWithTag("form_time_input").performScrollTo().performTextReplacement("15:30")
+        composeTestRule.onNodeWithTag("form_notes_input").performScrollTo().performTextReplacement("Liberar entrada na garagem")
+        composeTestRule.onNodeWithTag("form_guard_Cláudia").performScrollTo().performClick()
+
+        composeTestRule.onNodeWithTag("form_save_notice_btn").assertIsDisplayed().performClick()
+        composeTestRule.waitForIdle()
+
+        assertNotNull("Saving notice must preserve all fields", savedNotice)
+        assertEquals("B", savedNotice!!.block)
+        assertEquals("134", savedNotice!!.unitNumber)
+        assertEquals("Karla", savedNotice!!.residentName)
+        assertEquals("PRESTADOR_SERVICO", savedNotice!!.noticeType)
+        assertEquals("Carlos Eduardo", savedNotice!!.visitorName)
+        assertEquals("12.345.678-9", savedNotice!!.visitorDocument)
+        assertEquals("ABC-1234", savedNotice!!.vehiclePlate)
+        assertEquals("Gol Prata", savedNotice!!.vehicleModel)
+        assertEquals("15:30", savedNotice!!.scheduledTime)
+        assertEquals("Liberar entrada na garagem", savedNotice!!.additionalNotes)
+        assertEquals("Cláudia", savedNotice!!.registeredByGuardName)
+    }
+
+    // 40. Modal Novo Aviso responsivo em tela grande / tablet (w840dp-h1000dp)
+    @Test
+    @Config(sdk = [36], qualifiers = "w840dp-h1000dp")
+    fun `test 40 - ResidentNoticeFormDialog centers cleanly within max width and preserves fixed buttons on tablet`() {
+        val employees = listOf(
+            Employee(id = 1, name = "Higor", role = "Porteiro", shift = "Noturno"),
+            Employee(id = 2, name = "Cláudia", role = "Porteira", shift = "Diurno")
+        )
+        composeTestRule.setContent {
+            MyApplicationTheme(darkTheme = true) {
+                com.example.ui.screens.ResidentNoticeFormDialog(
+                    initialNotice = null,
+                    employees = employees,
+                    onDismiss = {},
+                    onSave = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        val dialogBounds = composeTestRule.onNodeWithTag("notice_form_dialog").getBoundsInRoot()
+        val dialogWidth = dialogBounds.right.value - dialogBounds.left.value
+        val dialogHeight = dialogBounds.bottom.value - dialogBounds.top.value
+        assertTrue("Tablet modal width ($dialogWidth) should stay <= 640dp", dialogWidth <= 641f)
+        assertTrue("Tablet modal height ($dialogHeight) fits within 1000dp", dialogHeight <= 1000f)
+        composeTestRule.onNodeWithTag("form_header_container").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_footer_container").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_cancel_notice_btn").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("form_save_notice_btn").assertIsDisplayed()
+    }
 }
 
