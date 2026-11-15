@@ -564,7 +564,10 @@ class BpsUpdateFeaturesTest {
                     db.execSQL("CREATE TABLE IF NOT EXISTS `shift_reports` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `greeting` TEXT NOT NULL, `postName` TEXT NOT NULL, `departingEmployee` TEXT NOT NULL, `receivingEmployee` TEXT NOT NULL, `reportContent` TEXT NOT NULL, `cameraWorkingCount` TEXT NOT NULL, `monitor1Details` TEXT NOT NULL, `monitor2Details` TEXT NOT NULL, `generalNotes` TEXT NOT NULL, `isPendingSync` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, `syncedAt` INTEGER, `hasPhotos` INTEGER NOT NULL, `photoCount` INTEGER NOT NULL, `cameraStatesJson` TEXT NOT NULL, `attachmentCount` INTEGER NOT NULL, `checklistSnapshotJson` TEXT NOT NULL)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS `shift_drafts` (`id` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `greeting` TEXT NOT NULL, `postName` TEXT NOT NULL, `receivingEmployee` TEXT NOT NULL, `departingEmployee` TEXT NOT NULL, `cameraWorkingCount` TEXT NOT NULL, `monitor1Details` TEXT NOT NULL, `monitor2Details` TEXT NOT NULL, `generalNotes` TEXT NOT NULL, `cameraStatesJson` TEXT NOT NULL, PRIMARY KEY(`id`))")
                     db.execSQL("CREATE TABLE IF NOT EXISTS `shift_attachments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `reportId` INTEGER, `type` TEXT NOT NULL, `displayName` TEXT NOT NULL, `filePath` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `sizeBytes` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`reportId`) REFERENCES `shift_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_shift_attachments_reportId` ON `shift_attachments` (`reportId`)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_shift_attachments_sha256` ON `shift_attachments` (`sha256`)")
                     db.execSQL("CREATE TABLE IF NOT EXISTS `shift_camera_records` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `reportId` INTEGER NOT NULL, `monitorNumber` INTEGER NOT NULL, `cameraNumber` INTEGER NOT NULL, `isWorking` INTEGER NOT NULL, `recordedAt` INTEGER NOT NULL, FOREIGN KEY(`reportId`) REFERENCES `shift_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_shift_camera_records_reportId` ON `shift_camera_records` (`reportId`)")
                     db.execSQL("INSERT INTO `shift_reports` (`timestamp`, `greeting`, `postName`, `departingEmployee`, `receivingEmployee`, `reportContent`, `cameraWorkingCount`, `monitor1Details`, `monitor2Details`, `generalNotes`, `isPendingSync`, `syncStatus`, `syncedAt`, `hasPhotos`, `photoCount`, `cameraStatesJson`, `attachmentCount`, `checklistSnapshotJson`) VALUES (1700000000000, 'Boa Noite', '*PORTARIA*', 'Carlos', 'Higor', 'Relatório legado', '28 funcionando', '1 Câmera 15 fora do ar', '2 Câmeras 11,15 e 16 fora do ar', 'Nota antiga', 0, 'ENVIADO', NULL, 0, 0, '', 0, '')")
                 }
 
@@ -584,6 +587,11 @@ class BpsUpdateFeaturesTest {
         assertEquals("Higor", cursor.getString(0))
         assertEquals("Nota antiga", cursor.getString(1))
         cursor.close()
+
+        val noticesCursor = migratedDb.openHelper.readableDatabase.query("SELECT COUNT(*) FROM resident_notices")
+        assertTrue(noticesCursor.moveToFirst())
+        assertEquals(0, noticesCursor.getInt(0))
+        noticesCursor.close()
 
         migratedDb.close()
         dbFile.delete()
@@ -664,12 +672,13 @@ class BpsUpdateFeaturesTest {
             firstTabBounds.bottom.value <= (rootBounds.bottom.value - navBottomDp + 1f)
         )
 
-        // Switch across all 5 tabs and confirm UI renders cleanly
+        // Switch across all 6 tabs and confirm UI renders cleanly
         listOf(
             "nav_tab_image_to_pdf",
             "nav_tab_custom_template",
             "nav_tab_employees",
             "nav_tab_history",
+            "nav_tab_resident_notices",
             "nav_tab_shift_handover"
         ).forEach { tag ->
             composeTestRule.onNodeWithTag(tag).performClick()
