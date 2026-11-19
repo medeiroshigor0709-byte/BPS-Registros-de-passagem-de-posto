@@ -4,21 +4,20 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -68,16 +67,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.AttachmentType
 import com.example.data.model.CameraChannelState
 import com.example.data.model.CameraMonitoringState
 import com.example.data.model.ChecklistSnapshotHelper
 import com.example.data.model.ShiftReport
+import com.example.ui.components.BpsResponsiveDialog
+import com.example.ui.components.BpsResponsiveModalScaffold
 import com.example.ui.components.ObservationAttachmentsSection
 import com.example.ui.theme.BpsDarkBg
 import com.example.ui.theme.BpsGold
@@ -94,6 +94,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HistoryScreen(
     viewModel: BpsViewModel,
@@ -170,9 +171,10 @@ fun HistoryScreen(
 
             // Sync Filter Chips
             item {
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val pendingCount = reports.count { it.isPendingSync }
                     val sentCount = reports.count { !it.isPendingSync }
@@ -180,7 +182,7 @@ fun HistoryScreen(
                     FilterChip(
                         selected = filterSyncStatus == "TODOS",
                         onClick = { filterSyncStatus = "TODOS" },
-                        label = { Text("Todos (${reports.size})", fontSize = 12.sp) }
+                        label = { Text("Todos (${reports.size})", fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     )
 
                     FilterChip(
@@ -191,7 +193,9 @@ fun HistoryScreen(
                                 "⏳ Pendentes ($pendingCount)",
                                 fontSize = 12.sp,
                                 fontWeight = if (pendingCount > 0) FontWeight.Bold else FontWeight.Normal,
-                                color = if (pendingCount > 0) Color(0xFFF59E0B) else Color.Unspecified
+                                color = if (pendingCount > 0) Color(0xFFF59E0B) else Color.Unspecified,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     )
@@ -199,7 +203,7 @@ fun HistoryScreen(
                     FilterChip(
                         selected = filterSyncStatus == "ENVIADOS",
                         onClick = { filterSyncStatus = "ENVIADOS" },
-                        label = { Text("✅ Enviados ($sentCount)", fontSize = 12.sp) }
+                        label = { Text("✅ Enviados ($sentCount)", fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }
@@ -347,70 +351,108 @@ private fun ShiftReportDetailDialog(
 
     var editableNotes by remember(report.id) { mutableStateOf(report.generalNotes) }
 
-    Dialog(
+    BpsResponsiveDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp)
-                .testTag("history_detail_dialog_${report.id}"),
-            shape = RoundedCornerShape(18.dp),
-            color = BpsDarkBg,
-            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.History,
-                            contentDescription = null,
-                            tint = BpsGold,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Registro de Passagem #${report.id}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "📅 $formattedDate • ${report.postName.replace("*", "")}",
-                                fontSize = 11.sp,
-                                color = BpsGoldLight
-                            )
-                        }
-                        IconButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.testTag("close_history_detail_btn")
+        dialogTestTag = "history_detail_dialog_${report.id}",
+        dialogMaxWidth = 680.dp,
+        fillMaxHeight = true
+    ) { metrics ->
+        BpsResponsiveModalScaffold(
+            title = "Registro de Passagem #${report.id}",
+            subtitle = "📅 $formattedDate • ${report.postName.replace("*", "")}",
+            headerIcon = Icons.Default.History,
+            onDismiss = onDismiss,
+            closeButtonTestTag = "close_history_detail_btn",
+            metrics = metrics,
+            footerContent = {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val stackFooter = maxWidth < 360.dp && report.isPendingSync
+                    if (stackFooter) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Fechar",
-                                tint = Color.White
-                            )
+                            OutlinedButton(
+                                onClick = { viewModel.confirmPdfSent(report.id, context) },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = BpsGold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Confirmar Envio", fontSize = 12.sp, color = BpsGoldLight, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.shareSavedReportPdf(report.copy(generalNotes = editableNotes), context)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Enviar PDF pelo WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (report.isPendingSync) {
+                                OutlinedButton(
+                                    onClick = { viewModel.confirmPdfSent(report.id, context) },
+                                    modifier = Modifier.weight(0.85f).heightIn(min = 48.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = BpsGold
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Confirmar Envio", fontSize = 12.sp, color = BpsGoldLight, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.shareSavedReportPdf(report.copy(generalNotes = editableNotes), context)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Enviar PDF pelo WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
-
-                // Scrollable Body
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+            }
+        ) {
                     // Metadata
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -532,7 +574,9 @@ private fun ShiftReportDetailDialog(
                                 onClick = {
                                     viewModel.updateSavedReportNotes(report.id, editableNotes, context)
                                 },
-                                modifier = Modifier.testTag("history_save_notes_btn"),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("history_save_notes_btn"),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Icon(
@@ -586,58 +630,8 @@ private fun ShiftReportDetailDialog(
                             )
                         }
                     }
-                }
-
-                // Footer actions (exclusively PDF)
-                Surface(color = Color(0xFF070B14)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (report.isPendingSync) {
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.confirmPdfSent(report.id, context)
-                                },
-                                modifier = Modifier.weight(0.85f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = BpsGold
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Confirmar Envio", fontSize = 12.sp, color = BpsGoldLight)
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.shareSavedReportPdf(report.copy(generalNotes = editableNotes), context)
-                                onDismiss()
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Enviar PDF pelo WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                }
             }
         }
-    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -687,6 +681,7 @@ private fun HistoricalMonitorGrid(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HistoryReportCard(
     report: ShiftReport,
@@ -718,9 +713,12 @@ fun HistoryReportCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Default.CalendarToday,
                         contentDescription = null,
@@ -732,7 +730,9 @@ fun HistoryReportCard(
                         text = formattedDate,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BpsGoldLight
+                        color = BpsGoldLight,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -745,6 +745,8 @@ fun HistoryReportCard(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = BpsSilver,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
@@ -796,9 +798,10 @@ fun HistoryReportCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             // Camera & Attachment badges
-            Row(
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
@@ -871,19 +874,25 @@ fun HistoryReportCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Button(
                         onClick = onSendPdf,
                         colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("history_share_pdf_btn_${report.id}")
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("history_share_pdf_btn_${report.id}")
                     ) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Enviar PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Enviar PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false)
                     }
 
                     if (onConfirmSent != null) {
@@ -891,11 +900,13 @@ fun HistoryReportCard(
                             onClick = onConfirmSent,
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("history_confirm_sent_btn_${report.id}")
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("history_confirm_sent_btn_${report.id}")
                         ) {
                             Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = BpsGold)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Confirmar", fontSize = 12.sp, color = BpsGoldLight)
+                            Text("Confirmar", fontSize = 12.sp, color = BpsGoldLight, maxLines = 1, softWrap = false)
                         }
                     }
 
@@ -903,23 +914,25 @@ fun HistoryReportCard(
                         onClick = onViewDetails,
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("history_view_btn_${report.id}")
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("history_view_btn_${report.id}")
                     ) {
                         Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Ver", fontSize = 12.sp)
+                        Text("Ver", fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
                 }
 
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Excluir",
                         tint = StatusError.copy(alpha = 0.7f),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

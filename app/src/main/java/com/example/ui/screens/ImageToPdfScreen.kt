@@ -8,13 +8,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,6 +81,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ImageToPdfScreen(
     viewModel: BpsViewModel,
@@ -178,7 +184,7 @@ fun ImageToPdfScreen(
                             },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp)
+                                .heightIn(min = 48.dp)
                                 .testTag("select_images_gallery_btn"),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -195,7 +201,10 @@ fun ImageToPdfScreen(
                             Text(
                                 text = if (state.selectedImages.isEmpty()) "Selecionar Imagens" else "Adicionar Mais",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -203,8 +212,9 @@ fun ImageToPdfScreen(
                             OutlinedButton(
                                 onClick = { viewModel.clearImagesForPdf() },
                                 modifier = Modifier
-                                    .height(48.dp)
+                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                                     .testTag("clear_selected_images_btn"),
+                                contentPadding = PaddingValues(horizontal = 12.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(
@@ -256,10 +266,10 @@ fun ImageToPdfScreen(
         // Selected Images List
         if (state.selectedImages.isNotEmpty()) {
             item {
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
                         text = "Imagens Selecionadas (${state.selectedImages.size})",
@@ -285,103 +295,161 @@ fun ImageToPdfScreen(
                         .fillMaxWidth()
                         .testTag("selected_image_item_$index")
                 ) {
-                    Row(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(60.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF1E293B))
-                                .border(1.dp, BpsGold.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                        ) {
-                            AsyncImage(
-                                model = item.uri,
-                                contentDescription = item.displayName,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = BpsGoldDark
+                        val isCompactQueueRow = maxWidth < 340.dp
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF1E293B))
+                                        .border(1.dp, BpsGold.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                                 ) {
-                                    Text(
-                                        text = "Pág. ${index + 1}",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    AsyncImage(
+                                        model = item.uri,
+                                        contentDescription = item.displayName,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = Color(0xFF1E293B)
-                                ) {
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = BpsGoldDark
+                                        ) {
+                                            Text(
+                                                text = "Pág. ${index + 1}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color(0xFF1E293B)
+                                        ) {
+                                            Text(
+                                                text = item.formatLabel,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BpsGoldLight,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = item.formatLabel,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BpsGoldLight,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        text = item.displayName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = item.displayName,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
 
-                        if (state.selectedImages.size > 1) {
-                            IconButton(
-                                onClick = { viewModel.moveImageInPdfQueue(index, index - 1) },
-                                enabled = index > 0,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowUpward,
-                                    contentDescription = "Mover imagem para cima",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            IconButton(
-                                onClick = { viewModel.moveImageInPdfQueue(index, index + 1) },
-                                enabled = index < state.selectedImages.lastIndex,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDownward,
-                                    contentDescription = "Mover imagem para baixo",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
+                                if (!isCompactQueueRow) {
+                                    if (state.selectedImages.size > 1) {
+                                        IconButton(
+                                            onClick = { viewModel.moveImageInPdfQueue(index, index - 1) },
+                                            enabled = index > 0,
+                                            modifier = Modifier.size(48.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowUpward,
+                                                contentDescription = "Mover imagem para cima",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.moveImageInPdfQueue(index, index + 1) },
+                                            enabled = index < state.selectedImages.lastIndex,
+                                            modifier = Modifier.size(48.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDownward,
+                                                contentDescription = "Mover imagem para baixo",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
 
-                        IconButton(
-                            onClick = { viewModel.removeImageFromPdfQueue(index) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Remover imagem ${item.displayName}",
-                                tint = StatusError,
-                                modifier = Modifier.size(18.dp)
-                            )
+                                    IconButton(
+                                        onClick = { viewModel.removeImageFromPdfQueue(index) },
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remover imagem ${item.displayName}",
+                                            tint = StatusError,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (isCompactQueueRow) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (state.selectedImages.size > 1) {
+                                        IconButton(
+                                            onClick = { viewModel.moveImageInPdfQueue(index, index - 1) },
+                                            enabled = index > 0,
+                                            modifier = Modifier.size(48.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowUpward,
+                                                contentDescription = "Mover imagem para cima",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.moveImageInPdfQueue(index, index + 1) },
+                                            enabled = index < state.selectedImages.lastIndex,
+                                            modifier = Modifier.size(48.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDownward,
+                                                contentDescription = "Mover imagem para baixo",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = { viewModel.removeImageFromPdfQueue(index) },
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remover imagem ${item.displayName}",
+                                            tint = StatusError,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -394,7 +462,7 @@ fun ImageToPdfScreen(
                     enabled = !state.isConverting,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp)
+                        .heightIn(min = 52.dp)
                         .testTag("convert_images_to_pdf_btn"),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -409,7 +477,13 @@ fun ImageToPdfScreen(
                             strokeWidth = 2.5.dp
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text("Convertendo imagens...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            text = "Convertendo imagens...",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     } else {
                         Icon(
                             imageVector = Icons.Default.PictureAsPdf,
@@ -420,7 +494,9 @@ fun ImageToPdfScreen(
                         Text(
                             text = "Converter em PDF (${state.selectedImages.size} página(s))",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -471,7 +547,7 @@ fun ImageToPdfScreen(
                             onClick = { showPreviewDialog = true },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
+                                .heightIn(min = 48.dp)
                                 .testTag("preview_generated_pdf_btn"),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -487,7 +563,13 @@ fun ImageToPdfScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Visualizar PDF Antes de Salvar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                text = "Visualizar PDF Antes de Salvar",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
@@ -503,32 +585,39 @@ fun ImageToPdfScreen(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(48.dp)
+                                    .heightIn(min = 48.dp)
                                     .testTag("save_generated_pdf_btn"),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = BpsGold,
                                     contentColor = Color(0xFF1E1400)
                                 ),
-                                contentPadding = PaddingValues(horizontal = 8.dp)
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Download,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Salvar PDF", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Salvar PDF",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
 
                             OutlinedButton(
                                 onClick = { PdfReportGenerator.sharePdf(context, pdfFile, pdfFile.name) },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(48.dp)
+                                    .heightIn(min = 48.dp)
                                     .testTag("share_generated_pdf_btn"),
                                 shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp)
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Share,
@@ -536,8 +625,16 @@ fun ImageToPdfScreen(
                                     tint = BpsGold,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Compartilhar", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Compartilhar",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }

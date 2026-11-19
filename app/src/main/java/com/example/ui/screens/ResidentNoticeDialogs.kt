@@ -1,7 +1,5 @@
 package com.example.ui.screens
 
-import android.view.ViewGroup
-import android.view.WindowManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,7 +63,6 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,7 +71,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -84,11 +80,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import com.example.data.local.CondoUnitsHelper
 import com.example.data.model.Employee
 import com.example.data.model.ResidentNotice
+import com.example.ui.components.BpsResponsiveDialog
+import com.example.ui.components.BpsResponsiveModalScaffold
+import com.example.ui.components.ConfigureResponsiveDialogWindow
 import com.example.ui.theme.BpsDarkBg
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
@@ -100,21 +97,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-
-@Composable
-private fun ConfigureResponsiveDialogWindow() {
-    val view = LocalView.current
-    SideEffect {
-        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.setLayout(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        @Suppress("DEPRECATION")
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-    }
-}
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -1291,41 +1273,91 @@ fun ResidentNoticeDetailDialog(
 
                 // Footer Actions
                 Surface(color = Color(0xFF070B14)) {
-                    Row(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(12.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onDuplicate,
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("detail_duplicate_btn"),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Duplicar", fontSize = 12.sp)
-                        }
+                        val useWrapFooter = this.maxWidth < 340.dp
+                        if (useWrapFooter) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onDuplicate,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("detail_duplicate_btn"),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Duplicar", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                }
 
-                        Button(
-                            onClick = onEdit,
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("detail_edit_btn"),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            border = BorderStroke(1.dp, BpsGold),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Editar", color = BpsGoldLight, fontSize = 12.sp)
-                        }
+                                Button(
+                                    onClick = onEdit,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("detail_edit_btn"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    border = BorderStroke(1.dp, BpsGold),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Editar", color = BpsGoldLight, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                }
 
-                        Button(
-                            onClick = onDelete,
-                            modifier = Modifier.weight(0.8f).heightIn(min = 48.dp).testTag("detail_delete_btn"),
-                            colors = ButtonDefaults.buttonColors(containerColor = StatusError.copy(alpha = 0.85f)),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Excluir", color = Color.White, fontSize = 12.sp)
+                                Button(
+                                    onClick = onDelete,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("detail_delete_btn"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = StatusError.copy(alpha = 0.85f)),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Excluir", color = Color.White, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onDuplicate,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("detail_duplicate_btn"),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Duplicar", fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                }
+
+                                Button(
+                                    onClick = onEdit,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("detail_edit_btn"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    border = BorderStroke(1.dp, BpsGold),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Editar", color = BpsGoldLight, fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                }
+
+                                Button(
+                                    onClick = onDelete,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(0.85f).heightIn(min = 48.dp).testTag("detail_delete_btn"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = StatusError.copy(alpha = 0.85f)),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Excluir", color = Color.White, fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                         }
                     }
                 }
@@ -1344,84 +1376,108 @@ fun RetentionPolicyDialog(
     onRequestPurge: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    BpsResponsiveDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.testTag("retention_policy_dialog"),
-        icon = {
-            Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = BpsGold)
-        },
-        title = {
-            Text("Privacidade & Política de Retenção", fontWeight = FontWeight.Bold)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "• Documentos de visitantes são criptografados localmente (AES-256-GCM) e mascarados nas listas.\n• Os avisos permanecem exclusivamente offline neste aparelho sem compartilhamento automático com terceiros.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                HorizontalDivider()
-
-                Text(
-                    text = "Prazo para retenção de avisos concluídos ou cancelados:",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BpsGoldLight
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+        dialogTestTag = "retention_policy_dialog",
+        dialogMaxWidth = 560.dp
+    ) { metrics ->
+        BpsResponsiveModalScaffold(
+            title = "Privacidade & Política de Retenção",
+            headerIcon = Icons.Default.Security,
+            onDismiss = onDismiss,
+            closeButtonTestTag = "close_retention_dialog_btn",
+            metrics = metrics,
+            footerContent = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    NoticeSecurityManager.RETENTION_OPTIONS_DAYS.forEach { days ->
-                        FilterChip(
-                            selected = currentRetentionDays == days,
-                            onClick = { onSelectRetentionDays(days) },
-                            label = { Text("$days dias", fontSize = 11.5.sp) },
-                            modifier = Modifier.testTag("retention_days_chip_$days")
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = BpsGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("retention_done_btn")
+                    ) {
+                        Text(
+                            text = "Concluir",
+                            color = Color(0xFF1E1400),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
+            }
+        ) {
+            Text(
+                text = "• Documentos de visitantes são criptografados localmente (AES-256-GCM) e mascarados nas listas.\n• Os avisos permanecem exclusivamente offline neste aparelho sem compartilhamento automático com terceiros.",
+                fontSize = 12.sp,
+                color = Color(0xFFCBD5E1)
+            )
 
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFF0F172A),
-                    border = BorderStroke(1.dp, Color(0xFF334155))
-                ) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = if (eligibleNotices.isEmpty()) {
-                                "Nenhum aviso concluído/cancelado ultrapassou o prazo de $currentRetentionDays dias."
-                            } else {
-                                "${eligibleNotices.size} aviso(s) concluído(s)/cancelado(s) ultrapassaram $currentRetentionDays dias. Nenhuma exclusão ocorre de forma silenciosa."
-                            },
-                            fontSize = 11.5.sp,
-                            color = if (eligibleNotices.isNotEmpty()) Color(0xFFFCD34D) else Color(0xFF94A3B8)
-                        )
-                        if (eligibleNotices.isNotEmpty()) {
-                            Button(
-                                onClick = onRequestPurge,
-                                colors = ButtonDefaults.buttonColors(containerColor = StatusError),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth().testTag("purge_expired_notices_btn")
-                            ) {
-                                Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Revisar e Remover Antigos (${eligibleNotices.size})", color = Color.White, fontSize = 12.sp)
-                            }
+            HorizontalDivider(color = Color(0xFF283548))
+
+            Text(
+                text = "Prazo para retenção de avisos concluídos ou cancelados:",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = BpsGoldLight
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                NoticeSecurityManager.RETENTION_OPTIONS_DAYS.forEach { days ->
+                    FilterChip(
+                        selected = currentRetentionDays == days,
+                        onClick = { onSelectRetentionDays(days) },
+                        label = { Text("$days dias", fontSize = 11.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.testTag("retention_days_chip_$days")
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF0F172A),
+                border = BorderStroke(1.dp, Color(0xFF334155))
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (eligibleNotices.isEmpty()) {
+                            "Nenhum aviso concluído/cancelado ultrapassou o prazo de $currentRetentionDays dias."
+                        } else {
+                            "${eligibleNotices.size} aviso(s) concluído(s)/cancelado(s) ultrapassaram $currentRetentionDays dias. Nenhuma exclusão ocorre de forma silenciosa."
+                        },
+                        fontSize = 11.5.sp,
+                        color = if (eligibleNotices.isNotEmpty()) Color(0xFFFCD34D) else Color(0xFF94A3B8)
+                    )
+                    if (eligibleNotices.isNotEmpty()) {
+                        Button(
+                            onClick = onRequestPurge,
+                            colors = ButtonDefaults.buttonColors(containerColor = StatusError),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("purge_expired_notices_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Revisar e Remover Antigos (${eligibleNotices.size})",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = BpsGold)
-            ) {
-                Text("Concluir", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold)
-            }
         }
-    )
+    }
 }

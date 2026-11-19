@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -72,6 +73,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -232,7 +234,7 @@ fun ResidentNoticesScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -261,7 +263,15 @@ fun ResidentNoticesScreen(
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color(0xFF1E1400), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Novo Aviso", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            text = "Novo Aviso",
+                            color = Color(0xFF1E1400),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -278,7 +288,10 @@ fun ResidentNoticesScreen(
                         },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
                                     Icon(imageVector = Icons.Default.Close, contentDescription = "Limpar busca")
                                 }
                             }
@@ -290,41 +303,112 @@ fun ResidentNoticesScreen(
                         singleLine = true
                     )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showAdvancedFilters = !showAdvancedFilters },
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(
-                                1.dp,
-                                if (showAdvancedFilters) BpsGold else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.weight(1f).testTag("toggle_filters_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.FilterList, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (showAdvancedFilters) "Ocultar Filtros" else "Filtros Avançados",
-                                fontSize = 12.sp,
-                                color = BpsGoldLight
-                            )
-                        }
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val stackActionButtons = maxWidth < 310.dp
+                        if (stackActionButtons) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { showAdvancedFilters = !showAdvancedFilters },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (showAdvancedFilters) BpsGold else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("toggle_filters_btn")
+                                ) {
+                                    Icon(imageVector = Icons.Default.FilterList, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (showAdvancedFilters) "Ocultar Filtros" else "Filtros Avançados",
+                                        fontSize = 12.sp,
+                                        color = BpsGoldLight,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
 
-                        OutlinedButton(
-                            onClick = { showRetentionDialog = true },
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.45f)),
-                            modifier = Modifier.weight(1f).testTag("privacy_retention_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Privacidade (${retentionDays}d)",
-                                fontSize = 12.sp,
-                                color = BpsGoldLight
-                            )
+                                OutlinedButton(
+                                    onClick = { showRetentionDialog = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                    border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.45f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("privacy_retention_btn")
+                                ) {
+                                    Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Privacidade (${retentionDays}d)",
+                                        fontSize = 12.sp,
+                                        color = BpsGoldLight,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { showAdvancedFilters = !showAdvancedFilters },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (showAdvancedFilters) BpsGold else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("toggle_filters_btn")
+                                ) {
+                                    Icon(imageVector = Icons.Default.FilterList, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (showAdvancedFilters) "Ocultar Filtros" else "Filtros Avançados",
+                                        fontSize = 12.sp,
+                                        color = BpsGoldLight,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showRetentionDialog = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    border = BorderStroke(1.dp, BpsGold.copy(alpha = 0.45f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("privacy_retention_btn")
+                                ) {
+                                    Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = BpsGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Privacidade (${retentionDays}d)",
+                                        fontSize = 12.sp,
+                                        color = BpsGoldLight,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -556,18 +640,31 @@ fun ResidentNoticesScreen(
                             modifier = Modifier.fillMaxWidth().testTag("section_header_pending")
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
                                     text = "🟡 AVISOS PENDENTES ($pendingTotal)",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.5.sp,
-                                    color = Color(0xFFFCD34D)
+                                    color = Color(0xFFFCD34D),
+                                    modifier = Modifier.weight(1f)
                                 )
-                                TextButton(onClick = { selectedTimeframeFilter = "PENDENTES" }) {
-                                    Text("Ver só pendentes", fontSize = 11.sp, color = BpsGoldLight)
+                                TextButton(
+                                    onClick = { selectedTimeframeFilter = "PENDENTES" },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text(
+                                        text = "Ver só pendentes",
+                                        fontSize = 11.5.sp,
+                                        color = BpsGoldLight,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }
@@ -1042,14 +1139,18 @@ fun ResidentNoticeCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = "${notice.noticeTypeEmoji} ${notice.noticeTypeDisplayName}",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = BpsGoldLight
                 )
-                Text(text = " • ", color = Color.Gray, fontSize = 12.sp)
+                Text(text = "•", color = Color.Gray, fontSize = 12.sp)
                 Text(
                     text = "Morador(a): ${notice.residentName}",
                     fontSize = 13.sp,
@@ -1140,31 +1241,37 @@ fun ResidentNoticeCard(
                     }
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (notice.status == "PENDENTE") {
                             OutlinedButton(
                                 onClick = { onQuickStatusChange("VISUALIZADO") },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.testTag("card_mark_viewed_btn_${notice.id}")
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("card_mark_viewed_btn_${notice.id}")
                             ) {
-                                Text("🔵 Visualizado", fontSize = 11.sp, color = Color(0xFF38BDF8))
+                                Text("🔵 Visualizado", fontSize = 11.sp, color = Color(0xFF38BDF8), maxLines = 1, softWrap = false)
                             }
                         }
                         if (notice.status in setOf("PENDENTE", "VISUALIZADO")) {
                             OutlinedButton(
                                 onClick = { onQuickStatusChange("CONCLUIDO") },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.testTag("card_mark_done_btn_${notice.id}")
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("card_mark_done_btn_${notice.id}")
                             ) {
-                                Text("🟢 Concluído", fontSize = 11.sp, color = StatusOk)
+                                Text("🟢 Concluído", fontSize = 11.sp, color = StatusOk, maxLines = 1, softWrap = false)
                             }
                             OutlinedButton(
                                 onClick = { onQuickStatusChange("CANCELADO") },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.testTag("card_mark_cancel_btn_${notice.id}")
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("card_mark_cancel_btn_${notice.id}")
                             ) {
-                                Text("🔴 Cancelar", fontSize = 11.sp, color = StatusError)
+                                Text("🔴 Cancelar", fontSize = 11.sp, color = StatusError, maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -1175,62 +1282,168 @@ fun ResidentNoticeCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(
-                        onClick = onToggleExpand,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("notice_expand_btn_${notice.id}")
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val stackActionStrip = maxWidth < 400.dp
+                if (stackActionStrip) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(if (isExpanded) "Recolher" else "Expandir", fontSize = 11.sp)
-                    }
-
-                    OutlinedButton(
-                        onClick = onViewDetails,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("notice_detail_btn_${notice.id}")
-                    ) {
-                        Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("Detalhes", fontSize = 11.sp)
-                    }
-
-                    if (notice.status == "PENDENTE") {
-                        Button(
-                            onClick = { onQuickStatusChange("CONCLUIDO") },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = StatusOk),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("notice_quick_done_btn_${notice.id}")
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Atendido", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            OutlinedButton(
+                                onClick = onToggleExpand,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("notice_expand_btn_${notice.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(if (isExpanded) "Recolher" else "Expandir", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            }
+
+                            OutlinedButton(
+                                onClick = onViewDetails,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("notice_detail_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Detalhes", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            }
+
+                            if (notice.status == "PENDENTE") {
+                                Button(
+                                    onClick = { onQuickStatusChange("CONCLUIDO") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = StatusOk),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .testTag("notice_quick_done_btn_${notice.id}")
+                                ) {
+                                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("Atendido", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = onDuplicate,
+                                modifier = Modifier.size(48.dp).testTag("notice_duplicate_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Duplicar aviso", tint = BpsGold, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = onEdit,
+                                modifier = Modifier.size(48.dp).testTag("notice_edit_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar aviso", tint = BpsSilver, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = onDelete,
+                                modifier = Modifier.size(48.dp).testTag("notice_delete_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Excluir aviso", tint = StatusError.copy(alpha = 0.8f), modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
-                }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FlowRow(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onToggleExpand,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("notice_expand_btn_${notice.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(if (isExpanded) "Recolher" else "Expandir", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    IconButton(onClick = onDuplicate, modifier = Modifier.size(36.dp).testTag("notice_duplicate_btn_${notice.id}")) {
-                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Duplicar aviso", tint = BpsGold, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = onEdit, modifier = Modifier.size(36.dp).testTag("notice_edit_btn_${notice.id}")) {
-                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar aviso", tint = BpsSilver, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp).testTag("notice_delete_btn_${notice.id}")) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Excluir aviso", tint = StatusError.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
+                            OutlinedButton(
+                                onClick = onViewDetails,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("notice_detail_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Detalhes", fontSize = 11.sp, maxLines = 1, softWrap = false)
+                            }
+
+                            if (notice.status == "PENDENTE") {
+                                Button(
+                                    onClick = { onQuickStatusChange("CONCLUIDO") },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = StatusOk),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .testTag("notice_quick_done_btn_${notice.id}")
+                                ) {
+                                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("Atendido", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            IconButton(
+                                onClick = onDuplicate,
+                                modifier = Modifier.size(48.dp).testTag("notice_duplicate_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Duplicar aviso", tint = BpsGold, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = onEdit,
+                                modifier = Modifier.size(48.dp).testTag("notice_edit_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar aviso", tint = BpsSilver, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = onDelete,
+                                modifier = Modifier.size(48.dp).testTag("notice_delete_btn_${notice.id}")
+                            ) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Excluir aviso", tint = StatusError.copy(alpha = 0.8f), modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
                 }
             }

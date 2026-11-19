@@ -1,41 +1,39 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,16 +55,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ChecklistTemplateItem
+import com.example.ui.components.BpsResponsiveDialog
+import com.example.ui.components.BpsResponsiveModalScaffold
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
-import com.example.ui.theme.BpsGoldLight
 import com.example.ui.theme.BpsSilver
 import com.example.ui.theme.StatusError
-import com.example.ui.theme.StatusOk
 import com.example.ui.viewmodel.BpsViewModel
 
 @Composable
@@ -147,7 +146,9 @@ fun TemplateSettingsScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
+                            .heightIn(min = 48.dp)
                             .testTag("add_template_item_button"),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = BpsGoldDark,
@@ -160,13 +161,22 @@ fun TemplateSettingsScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Adicionar Item", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Adicionar Item",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
 
                     OutlinedButton(
                         onClick = { showResetConfirmDialog = true },
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("reset_template_button")
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("reset_template_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
@@ -175,7 +185,13 @@ fun TemplateSettingsScreen(
                             tint = BpsGold
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Padrão BPS", fontSize = 12.sp)
+                        Text(
+                            text = "Padrão BPS",
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -290,6 +306,7 @@ fun TemplateSettingsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TemplateItemCard(
     item: ChecklistTemplateItem,
@@ -307,7 +324,7 @@ fun TemplateItemCard(
         colors = CardDefaults.cardColors(
             containerColor = if (item.isEnabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
         ),
-        border = androidx.compose.foundation.BorderStroke(
+        border = BorderStroke(
             1.dp,
             if (item.isRequired && item.isEnabled) BpsGold.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
         )
@@ -335,19 +352,25 @@ fun TemplateItemCard(
                         text = item.title,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
-                        color = if (item.isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        color = if (item.isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = item.category,
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                // Edit and Delete buttons
+                // Edit and Delete buttons (>= 48dp touch targets)
                 IconButton(
                     onClick = onEdit,
-                    modifier = Modifier.testTag("edit_item_${item.id}")
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("edit_item_${item.id}")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
@@ -359,7 +382,9 @@ fun TemplateItemCard(
 
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.testTag("delete_item_${item.id}")
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("delete_item_${item.id}")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
@@ -374,11 +399,11 @@ fun TemplateItemCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Badges & Toggle Row
-            Row(
+            // Badges & Toggle Row (wraps cleanly on compact widths or large font scale)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Mandatory vs Optional toggle chip
                 FilterChip(
@@ -388,7 +413,9 @@ fun TemplateItemCard(
                         Text(
                             text = if (item.isRequired) "★ Obrigatório" else "☆ Opcional",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
@@ -403,7 +430,9 @@ fun TemplateItemCard(
                     Text(
                         text = if (item.isEnabled) "Ativo no relatório" else "Inativo",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Switch(
@@ -436,162 +465,197 @@ fun TemplateItemEditDialog(
 
     val quickEmojis = listOf("📱", "🔌", "📞", "📔", "📻", "🚧", "🎥", "☔️", "⛱️", "🕹️", "🌊", "💨", "🗝️", "🧯", "🔦", "🚪", "🚗", "🛡️", "📋", "🚨", "☕", "🖥️")
 
-    AlertDialog(
+    BpsResponsiveDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (item == null) "Novo Item no Modelo" else "Editar Item do Modelo",
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Nome do Item") },
-                    placeholder = { Text("Ex: Extintor pó químico, Celular...") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("dialog_item_title_input"),
-                    singleLine = true
-                )
-
+        dialogTestTag = "template_item_edit_dialog",
+        dialogMaxWidth = 560.dp
+    ) { metrics ->
+        BpsResponsiveModalScaffold(
+            title = if (item == null) "Novo Item no Modelo" else "Editar Item do Modelo",
+            headerIcon = Icons.Default.Tune,
+            onDismiss = onDismiss,
+            closeButtonTestTag = "close_template_dialog_btn",
+            footerTestTag = "template_dialog_footer",
+            metrics = metrics,
+            footerContent = {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    OutlinedTextField(
-                        value = emoji,
-                        onValueChange = { emoji = it },
-                        label = { Text("Emoji") },
+                    OutlinedButton(
+                        onClick = onDismiss,
                         modifier = Modifier
-                            .width(80.dp)
-                            .testTag("dialog_item_emoji_input"),
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Escolha rápida de emoji:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(top = 2.dp)
-                        ) {
-                            quickEmojis.take(12).forEach { e ->
-                                Text(
-                                    text = e,
-                                    fontSize = 18.sp,
-                                    modifier = Modifier
-                                        .clickable { emoji = e }
-                                        .padding(2.dp)
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("dialog_cancel_item_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF475569))
+                    ) {
+                        Text(
+                            text = "Cancelar",
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (title.isNotBlank()) {
+                                val newItem = item?.copy(
+                                    title = title.trim(),
+                                    emoji = if (emoji.isNotBlank()) emoji.trim() else "📋",
+                                    category = if (category.isNotBlank()) category.trim() else "Geral",
+                                    isRequired = isRequired,
+                                    isCamerasItem = isCamerasItem
+                                ) ?: ChecklistTemplateItem(
+                                    title = title.trim(),
+                                    emoji = if (emoji.isNotBlank()) emoji.trim() else "📋",
+                                    category = if (category.isNotBlank()) category.trim() else "Geral",
+                                    isRequired = isRequired,
+                                    isCamerasItem = isCamerasItem,
+                                    orderIndex = 100
                                 )
+                                onSave(newItem)
                             }
+                        },
+                        enabled = title.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BpsGoldDark),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .heightIn(min = 48.dp)
+                            .testTag("dialog_save_item_button")
+                    ) {
+                        Text(
+                            text = "Salvar Item",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        ) {
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Nome do Item") },
+                placeholder = { Text("Ex: Extintor pó químico, Celular...") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dialog_item_title_input"),
+                singleLine = true
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = emoji,
+                    onValueChange = { emoji = it },
+                    label = { Text("Emoji") },
+                    modifier = Modifier
+                        .width(80.dp)
+                        .testTag("dialog_item_emoji_input"),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Escolha rápida de emoji:",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        quickEmojis.take(12).forEach { e ->
+                            Text(
+                                text = e,
+                                fontSize = 18.sp,
+                                modifier = Modifier
+                                    .clickable { emoji = e }
+                                    .padding(4.dp)
+                            )
                         }
                     }
                 }
-
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("Categoria") },
-                    placeholder = { Text("Ex: Segurança, Equipamentos...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                // Mandatory toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "Item Obrigatório?",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            text = "Porteiro deve confirmar no checklist",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = isRequired,
-                        onCheckedChange = { isRequired = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = BpsGold,
-                            checkedTrackColor = BpsGoldDark.copy(alpha = 0.5f)
-                        ),
-                        modifier = Modifier.testTag("dialog_toggle_required")
-                    )
-                }
-
-                // Cameras CFTV toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "CFTV / Monitoramento de Câmeras?",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            text = "Exibe campos de Monitores 1 e 2",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = isCamerasItem,
-                        onCheckedChange = { isCamerasItem = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = BpsGold,
-                            checkedTrackColor = BpsGoldDark.copy(alpha = 0.5f)
-                        )
-                    )
-                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (title.isNotBlank()) {
-                        val newItem = item?.copy(
-                            title = title.trim(),
-                            emoji = if (emoji.isNotBlank()) emoji.trim() else "📋",
-                            category = if (category.isNotBlank()) category.trim() else "Geral",
-                            isRequired = isRequired,
-                            isCamerasItem = isCamerasItem
-                        ) ?: ChecklistTemplateItem(
-                            title = title.trim(),
-                            emoji = if (emoji.isNotBlank()) emoji.trim() else "📋",
-                            category = if (category.isNotBlank()) category.trim() else "Geral",
-                            isRequired = isRequired,
-                            isCamerasItem = isCamerasItem,
-                            orderIndex = 100
-                        )
-                        onSave(newItem)
-                    }
-                },
-                enabled = title.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = BpsGoldDark),
-                modifier = Modifier.testTag("dialog_save_item_button")
+
+            OutlinedTextField(
+                value = category,
+                onValueChange = { category = it },
+                label = { Text("Categoria") },
+                placeholder = { Text("Ex: Segurança, Equipamentos...") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            // Mandatory toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Salvar Item", color = Color.White)
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(
+                        text = "Item Obrigatório?",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Porteiro deve confirmar no checklist",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = isRequired,
+                    onCheckedChange = { isRequired = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = BpsGold,
+                        checkedTrackColor = BpsGoldDark.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.testTag("dialog_toggle_required")
+                )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+
+            // Cameras CFTV toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(
+                        text = "CFTV / Monitoramento de Câmeras?",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Exibe campos de Monitores 1 e 2",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = isCamerasItem,
+                    onCheckedChange = { isCamerasItem = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = BpsGold,
+                        checkedTrackColor = BpsGoldDark.copy(alpha = 0.5f)
+                    )
+                )
             }
         }
-    )
+    }
 }

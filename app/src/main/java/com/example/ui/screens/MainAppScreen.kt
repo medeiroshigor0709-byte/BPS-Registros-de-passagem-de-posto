@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -12,7 +13,9 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.Badge
@@ -31,8 +34,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,100 +78,128 @@ fun MainAppScreen(
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
     val pendingNoticesCount by viewModel.pendingNoticesCount.collectAsStateWithLifecycle()
+    val fontScale = LocalDensity.current.fontScale
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = BpsDarkBg,
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            BpsHeader(
-                subtitle = selectedTab.headerSubtitle,
-                isOnline = isOnline
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = Color(0xFF070B14),
-                tonalElevation = 8.dp,
-                windowInsets = WindowInsets.navigationBars
-                    .union(WindowInsets.displayCutout)
-                    .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
-                modifier = Modifier.testTag("bps_bottom_navigation")
-            ) {
-                BpsNavTab.values().forEach { tab ->
-                    val isSelected = selectedTab == tab
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { selectedTab = tab },
-                        icon = {
-                            val badgeCount = when (tab) {
-                                BpsNavTab.HISTORY -> pendingCount
-                                BpsNavTab.RESIDENT_NOTICES -> pendingNoticesCount
-                                else -> 0
-                            }
-                            val badgeBg = if (tab == BpsNavTab.HISTORY) Color(0xFFEF4444) else Color(0xFFF59E0B)
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isCompactWidth = maxWidth < 360.dp
+        val isLargeFont = fontScale > 1.15f
+        val navLabelSize = when {
+            isCompactWidth && isLargeFont -> 8.sp
+            isCompactWidth -> 8.5.sp
+            isLargeFont -> 9.sp
+            else -> 9.5.sp
+        }
+        val navIconSize = if (isCompactWidth) 20.dp else 24.dp
 
-                            if (badgeCount > 0) {
-                                androidx.compose.material3.BadgedBox(
-                                    badge = {
-                                        androidx.compose.material3.Badge(
-                                            containerColor = badgeBg,
-                                            contentColor = Color.White
-                                        ) {
-                                            Text(badgeCount.toString())
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = BpsDarkBg,
+            contentWindowInsets = WindowInsets.safeDrawing,
+            topBar = {
+                BpsHeader(
+                    subtitle = selectedTab.headerSubtitle,
+                    isOnline = isOnline
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = Color(0xFF070B14),
+                    tonalElevation = 8.dp,
+                    windowInsets = WindowInsets.navigationBars
+                        .union(WindowInsets.displayCutout)
+                        .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
+                    modifier = Modifier.testTag("bps_bottom_navigation")
+                ) {
+                    BpsNavTab.values().forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { selectedTab = tab },
+                            icon = {
+                                val badgeCount = when (tab) {
+                                    BpsNavTab.HISTORY -> pendingCount
+                                    BpsNavTab.RESIDENT_NOTICES -> pendingNoticesCount
+                                    else -> 0
+                                }
+                                val badgeBg = if (tab == BpsNavTab.HISTORY) Color(0xFFEF4444) else Color(0xFFF59E0B)
+
+                                if (badgeCount > 0) {
+                                    androidx.compose.material3.BadgedBox(
+                                        badge = {
+                                            androidx.compose.material3.Badge(
+                                                containerColor = badgeBg,
+                                                contentColor = Color.White
+                                            ) {
+                                                Text(
+                                                    text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
+                                            }
                                         }
+                                    ) {
+                                        Icon(
+                                            imageVector = tab.icon,
+                                            contentDescription = tab.title,
+                                            tint = if (isSelected) BpsGold else Color(0xFF94A3B8),
+                                            modifier = Modifier.size(navIconSize)
+                                        )
                                     }
-                                ) {
+                                } else {
                                     Icon(
                                         imageVector = tab.icon,
                                         contentDescription = tab.title,
-                                        tint = if (isSelected) BpsGold else Color(0xFF94A3B8)
+                                        tint = if (isSelected) BpsGold else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(navIconSize)
                                     )
                                 }
-                            } else {
-                                Icon(
-                                    imageVector = tab.icon,
-                                    contentDescription = tab.title,
-                                    tint = if (isSelected) BpsGold else Color(0xFF94A3B8)
+                            },
+                            label = {
+                                Text(
+                                    text = tab.title,
+                                    fontSize = navLabelSize,
+                                    letterSpacing = if (isCompactWidth) (-0.2).sp else 0.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) BpsGoldLight else Color(0xFF94A3B8)
                                 )
-                            }
-                        },
-                        label = {
-                            Text(
-                                text = tab.title,
-                                fontSize = 9.5.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) BpsGoldLight else Color(0xFF94A3B8)
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = Color(0xFF1E293B)
-                        ),
-                        modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
-                    )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = Color(0xFF1E293B)
+                            ),
+                            modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
+                        )
+                    }
                 }
             }
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
-                .imePadding()
-        ) {
-            when (selectedTab) {
-                BpsNavTab.SHIFT_HANDOVER -> ShiftHandoverScreen(
-                    viewModel = viewModel,
-                    onOpenResidentNotices = { selectedTab = BpsNavTab.RESIDENT_NOTICES }
-                )
-                BpsNavTab.IMAGE_TO_PDF -> ImageToPdfScreen(viewModel = viewModel)
-                BpsNavTab.CUSTOM_TEMPLATE -> TemplateSettingsScreen(viewModel = viewModel)
-                BpsNavTab.EMPLOYEES -> EmployeeManagementScreen(viewModel = viewModel)
-                BpsNavTab.HISTORY -> HistoryScreen(viewModel = viewModel)
-                BpsNavTab.RESIDENT_NOTICES -> ResidentNoticesScreen(viewModel = viewModel)
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+                    .imePadding(),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 840.dp)
+                        .fillMaxSize()
+                ) {
+                    when (selectedTab) {
+                        BpsNavTab.SHIFT_HANDOVER -> ShiftHandoverScreen(
+                            viewModel = viewModel,
+                            onOpenResidentNotices = { selectedTab = BpsNavTab.RESIDENT_NOTICES }
+                        )
+                        BpsNavTab.IMAGE_TO_PDF -> ImageToPdfScreen(viewModel = viewModel)
+                        BpsNavTab.CUSTOM_TEMPLATE -> TemplateSettingsScreen(viewModel = viewModel)
+                        BpsNavTab.EMPLOYEES -> EmployeeManagementScreen(viewModel = viewModel)
+                        BpsNavTab.HISTORY -> HistoryScreen(viewModel = viewModel)
+                        BpsNavTab.RESIDENT_NOTICES -> ResidentNoticesScreen(viewModel = viewModel)
+                    }
+                }
             }
         }
     }

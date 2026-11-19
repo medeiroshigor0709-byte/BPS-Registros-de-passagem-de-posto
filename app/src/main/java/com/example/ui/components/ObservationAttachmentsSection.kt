@@ -11,12 +11,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,16 +29,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +66,7 @@ import com.example.ui.viewmodel.AttachmentFeedback
 import com.example.util.AttachmentStorageManager
 import java.io.File
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ObservationAttachmentsSection(
     attachments: List<ShiftAttachment>,
@@ -101,10 +106,10 @@ fun ObservationAttachmentsSection(
             .fillMaxWidth()
             .testTag("${testTagPrefix}_attachments_section")
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = "📎 Anexos da Observação (${attachments.size})",
@@ -135,7 +140,7 @@ fun ObservationAttachmentsSection(
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(48.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("${testTagPrefix}_add_photo_btn"),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
@@ -148,7 +153,15 @@ fun ObservationAttachmentsSection(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Adicionar foto", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight)
+                    Text(
+                        text = "Adicionar foto",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BpsGoldLight,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
                 OutlinedButton(
@@ -157,7 +170,7 @@ fun ObservationAttachmentsSection(
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(48.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("${testTagPrefix}_add_pdf_btn"),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
@@ -170,7 +183,15 @@ fun ObservationAttachmentsSection(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Adicionar PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(
+                        text = "Adicionar PDF",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -306,7 +327,7 @@ fun ObservationAttachmentsSection(
                             }
                             IconButton(
                                 onClick = { previewPdf = pdf },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Visibility,
@@ -319,7 +340,7 @@ fun ObservationAttachmentsSection(
                                 IconButton(
                                     onClick = { onRemoveAttachment(pdf) },
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(48.dp)
                                         .testTag("${testTagPrefix}_remove_attachment_${pdf.id}")
                                 ) {
                                     Icon(
@@ -337,50 +358,51 @@ fun ObservationAttachmentsSection(
         }
     }
 
-    // Photo Preview Dialog
+    // Photo Preview Dialog (Responsive edge-to-edge)
     previewPhoto?.let { photo ->
-        AlertDialog(
+        BpsResponsiveDialog(
             onDismissRequest = { previewPhoto = null },
-            title = {
-                Text(
-                    text = photo.displayName,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
+            dialogTestTag = "${testTagPrefix}_photo_preview_dialog",
+            dialogMaxWidth = 560.dp
+        ) { metrics ->
+            val previewImageMaxHeight = (metrics.availableHeight * 0.55f).coerceAtLeast(160.dp)
+            BpsResponsiveModalScaffold(
+                title = photo.displayName,
+                subtitle = "Armazenamento persistente • ${AttachmentStorageManager.formatFileSize(photo.sizeBytes)}",
+                headerIcon = Icons.Default.Image,
+                onDismiss = { previewPhoto = null },
+                closeButtonTestTag = "${testTagPrefix}_close_photo_preview_btn",
+                metrics = metrics,
+                footerContent = {
+                    Button(
+                        onClick = { previewPhoto = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = BpsGold),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(300.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center
+                            .heightIn(min = 48.dp)
                     ) {
-                        AsyncImage(
-                            model = File(photo.filePath),
-                            contentDescription = photo.displayName,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
+                        Text("Fechar", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold)
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Armazenamento persistente • ${AttachmentStorageManager.formatFileSize(photo.sizeBytes)}",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp, max = previewImageMaxHeight)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = File(photo.filePath),
+                        contentDescription = photo.displayName,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
                     )
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { previewPhoto = null }) {
-                    Text("Fechar")
-                }
             }
-        )
+        }
     }
 
     // PDF Viewer Dialog

@@ -2,16 +2,19 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,12 +36,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,10 +61,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.Employee
+import com.example.ui.components.BpsResponsiveDialog
+import com.example.ui.components.BpsResponsiveModalScaffold
 import com.example.ui.theme.BpsGold
 import com.example.ui.theme.BpsGoldDark
 import com.example.ui.theme.BpsGoldLight
@@ -116,6 +120,7 @@ fun EmployeeManagementScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .testTag("add_employee_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -129,7 +134,12 @@ fun EmployeeManagementScreen(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Cadastrar Novo Funcionário", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Cadastrar Novo Funcionário",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
@@ -218,6 +228,7 @@ fun EmployeeManagementScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EmployeeCard(
     employee: Employee,
@@ -232,7 +243,7 @@ fun EmployeeCard(
             .testTag("employee_card_${employee.id}"),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -243,7 +254,7 @@ fun EmployeeCard(
                 Surface(
                     shape = CircleShape,
                     color = Color(0xFF1E293B),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, BpsGold),
+                    border = BorderStroke(1.5.dp, BpsGold),
                     modifier = Modifier.size(46.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -263,18 +274,25 @@ fun EmployeeCard(
                         text = employee.name,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = employee.role,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = BpsGoldLight
+                        color = BpsGoldLight,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                // Edit & Delete actions
-                IconButton(onClick = onEdit) {
+                // Edit & Delete actions (>= 48dp touch targets)
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(48.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
                         contentDescription = "Editar",
@@ -282,7 +300,10 @@ fun EmployeeCard(
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(onClick = onDelete) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(48.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Excluir",
@@ -296,13 +317,16 @@ fun EmployeeCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Details row (Turno, Matrícula, WhatsApp)
-            Row(
+            // Details FlowRow (Turno, Matrícula, WhatsApp) - wraps gracefully on narrow widths
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.heightIn(min = 32.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.Schedule,
                         contentDescription = null,
@@ -318,7 +342,10 @@ fun EmployeeCard(
                 }
 
                 if (employee.badgeNumber.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.heightIn(min = 32.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Badge,
                             contentDescription = null,
@@ -337,26 +364,29 @@ fun EmployeeCard(
 
                 if (employee.phone.isNotBlank()) {
                     Surface(
+                        onClick = { onWhatsAppClick(employee.phone) },
                         shape = RoundedCornerShape(6.dp),
                         color = WhatsAppGreen.copy(alpha = 0.15f),
-                        modifier = Modifier.clickable { onWhatsAppClick(employee.phone) }
+                        modifier = Modifier.heightIn(min = 36.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Phone,
                                 contentDescription = "WhatsApp",
                                 tint = WhatsAppGreen,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "WhatsApp",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = WhatsAppGreen
+                                color = WhatsAppGreen,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -385,142 +415,170 @@ fun EmployeeEditDialog(
     var roleExpanded by remember { mutableStateOf(false) }
     var shiftExpanded by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    BpsResponsiveDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (employee == null) "Novo Funcionário BPS" else "Editar Funcionário",
-                fontWeight = FontWeight.Bold
+        dialogTestTag = "employee_edit_dialog",
+        dialogMaxWidth = 560.dp
+    ) { metrics ->
+        BpsResponsiveModalScaffold(
+            title = if (employee == null) "Novo Funcionário BPS" else "Editar Funcionário",
+            headerIcon = Icons.Default.Person,
+            onDismiss = onDismiss,
+            closeButtonTestTag = "close_employee_dialog_btn",
+            footerTestTag = "employee_dialog_footer",
+            metrics = metrics,
+            footerContent = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("employee_dialog_cancel_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF475569))
+                    ) {
+                        Text(
+                            text = "Cancelar",
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank()) {
+                                val emp = employee?.copy(
+                                    name = name.trim(),
+                                    role = role,
+                                    shift = shift,
+                                    phone = phone.trim(),
+                                    badgeNumber = badgeNumber.trim()
+                                ) ?: Employee(
+                                    name = name.trim(),
+                                    role = role,
+                                    shift = shift,
+                                    phone = phone.trim(),
+                                    badgeNumber = badgeNumber.trim()
+                                )
+                                onSave(emp)
+                            }
+                        },
+                        enabled = name.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BpsGoldDark),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .heightIn(min = 48.dp)
+                            .testTag("employee_dialog_save_button")
+                    ) {
+                        Text(
+                            text = "Salvar",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        ) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nome Completo") },
+                placeholder = { Text("Ex: Higor") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("employee_name_dialog_input"),
+                singleLine = true
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+
+            // Role Dropdown
+            ExposedDropdownMenuBox(
+                expanded = roleExpanded,
+                onExpandedChange = { roleExpanded = !roleExpanded }
             ) {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nome Completo") },
-                    placeholder = { Text("Ex: Higor") },
+                    value = role,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Cargo / Função") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = roleExpanded) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("employee_name_dialog_input"),
-                    singleLine = true
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                 )
-
-                // Role Dropdown
-                ExposedDropdownMenuBox(
+                ExposedDropdownMenu(
                     expanded = roleExpanded,
-                    onExpandedChange = { roleExpanded = !roleExpanded }
+                    onDismissRequest = { roleExpanded = false }
                 ) {
-                    OutlinedTextField(
-                        value = role,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Cargo / Função") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = roleExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = roleExpanded,
-                        onDismissRequest = { roleExpanded = false }
-                    ) {
-                        roles.forEach { r ->
-                            DropdownMenuItem(
-                                text = { Text(r) },
-                                onClick = {
-                                    role = r
-                                    roleExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Shift Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = shiftExpanded,
-                    onExpandedChange = { shiftExpanded = !shiftExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = shift,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Turno / Escala") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = shiftExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = shiftExpanded,
-                        onDismissRequest = { shiftExpanded = false }
-                    ) {
-                        shifts.forEach { s ->
-                            DropdownMenuItem(
-                                text = { Text(s) },
-                                onClick = {
-                                    shift = s
-                                    shiftExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Telefone / WhatsApp (Opcional)") },
-                    placeholder = { Text("Ex: (11) 98765-4321") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = badgeNumber,
-                    onValueChange = { badgeNumber = it },
-                    label = { Text("Matrícula / Crachá (Opcional)") },
-                    placeholder = { Text("Ex: BPS-104") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (name.isNotBlank()) {
-                        val emp = employee?.copy(
-                            name = name.trim(),
-                            role = role,
-                            shift = shift,
-                            phone = phone.trim(),
-                            badgeNumber = badgeNumber.trim()
-                        ) ?: Employee(
-                            name = name.trim(),
-                            role = role,
-                            shift = shift,
-                            phone = phone.trim(),
-                            badgeNumber = badgeNumber.trim()
+                    roles.forEach { r ->
+                        DropdownMenuItem(
+                            text = { Text(r) },
+                            onClick = {
+                                role = r
+                                roleExpanded = false
+                            }
                         )
-                        onSave(emp)
                     }
-                },
-                enabled = name.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = BpsGoldDark),
-                modifier = Modifier.testTag("employee_dialog_save_button")
+                }
+            }
+
+            // Shift Dropdown
+            ExposedDropdownMenuBox(
+                expanded = shiftExpanded,
+                onExpandedChange = { shiftExpanded = !shiftExpanded }
             ) {
-                Text("Salvar", color = Color.White)
+                OutlinedTextField(
+                    value = shift,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Turno / Escala") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = shiftExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                )
+                ExposedDropdownMenu(
+                    expanded = shiftExpanded,
+                    onDismissRequest = { shiftExpanded = false }
+                ) {
+                    shifts.forEach { s ->
+                        DropdownMenuItem(
+                            text = { Text(s) },
+                            onClick = {
+                                shift = s
+                                shiftExpanded = false
+                            }
+                        )
+                    }
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
+
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { phone = it },
+                label = { Text("Telefone / WhatsApp (Opcional)") },
+                placeholder = { Text("Ex: (11) 98765-4321") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = badgeNumber,
+                onValueChange = { badgeNumber = it },
+                label = { Text("Matrícula / Crachá (Opcional)") },
+                placeholder = { Text("Ex: BPS-104") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
         }
-    )
+    }
 }

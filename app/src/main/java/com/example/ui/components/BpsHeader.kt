@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,12 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,11 +37,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.ui.theme.BpsGold
-import com.example.ui.theme.BpsGoldDark
 import com.example.ui.theme.BpsGoldLight
 import com.example.ui.theme.BpsSilver
 
@@ -64,7 +61,7 @@ fun BpsHeader(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -80,8 +77,12 @@ fun BpsHeader(
                         .union(WindowInsets.displayCutout)
                         .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
+            val isCompactWidth = maxWidth < 360.dp
+            val logoContainerSize = if (isCompactWidth) 44.dp else 54.dp
+            val logoImageSize = if (isCompactWidth) 40.dp else 50.dp
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -91,7 +92,7 @@ fun BpsHeader(
                 // Official BPS Logo Image
                 Box(
                     modifier = Modifier
-                        .size(54.dp)
+                        .size(logoContainerSize)
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF030712))
                         .border(1.5.dp, BpsGold, RoundedCornerShape(12.dp)),
@@ -100,12 +101,12 @@ fun BpsHeader(
                     Image(
                         painter = painterResource(id = R.drawable.bps_official_logo),
                         contentDescription = "BPS Facilities Logo",
-                        modifier = Modifier.size(50.dp),
+                        modifier = Modifier.size(logoImageSize),
                         contentScale = ContentScale.Fit
                     )
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(if (isCompactWidth) 10.dp else 14.dp))
 
                 Column(
                     modifier = Modifier.weight(1f),
@@ -117,17 +118,22 @@ fun BpsHeader(
                         Text(
                             text = "BPS",
                             color = BpsSilver,
-                            fontSize = 20.sp,
+                            fontSize = if (isCompactWidth) 17.sp else 20.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 1.sp
+                            letterSpacing = if (isCompactWidth) 0.5.sp else 1.sp,
+                            maxLines = 1,
+                            softWrap = false
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = "FACILITIES",
                             color = BpsGoldLight,
-                            fontSize = 17.sp,
+                            fontSize = if (isCompactWidth) 14.sp else 17.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp
+                            letterSpacing = if (isCompactWidth) 1.sp else 2.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -136,11 +142,14 @@ fun BpsHeader(
                     Text(
                         text = subtitle,
                         color = Color(0xFF94A3B8),
-                        fontSize = 12.sp,
+                        fontSize = if (isCompactWidth) 11.sp else 12.sp,
                         fontWeight = FontWeight.Medium,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 // Connectivity & Security Badge
                 Surface(
@@ -152,7 +161,10 @@ fun BpsHeader(
                     )
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(
+                            horizontal = if (isCompactWidth) 7.dp else 8.dp,
+                            vertical = 4.dp
+                        ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -160,12 +172,14 @@ fun BpsHeader(
                             color = if (isOnline) Color(0xFF22C55E) else Color(0xFFEF4444),
                             modifier = Modifier.size(8.dp)
                         ) {}
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = if (isOnline) "ONLINE" else "OFFLINE",
                             color = if (isOnline) BpsGoldLight else Color(0xFFFCA5A5),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = if (isCompactWidth) 9.sp else 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }

@@ -7,11 +7,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -175,20 +178,36 @@ fun CameraMonitoringCard(
                     onClick = onApplyAllWorking,
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 48.dp)
                         .testTag("preset_all_cameras_ok"),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
-                    Text("Todas 32 OK", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Todas 32 OK",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
                 OutlinedButton(
                     onClick = onApplyDefaultBpsPreset,
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 48.dp)
                         .testTag("preset_bps_default"),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
-                    Text("Padrão BPS (28 OK)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Padrão BPS (28 OK)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
@@ -255,6 +274,7 @@ private fun SummaryStatPill(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MonitorSectionPanel(
     monitorNumber: Int,
@@ -318,25 +338,39 @@ private fun MonitorSectionPanel(
                 )
             }
 
-            // Quick Summary Chips inside Monitor Panel
+            // Quick Summary Chips inside Monitor Panel (wraps cleanly on compact screens)
             Spacer(modifier = Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     MonitorBadge("Total: ${summary.total}", Color(0xFF334155), Color.White)
                     MonitorBadge("Funcionando: ${summary.working}", StatusOk.copy(alpha = 0.2f), Color(0xFF86EFAC))
                     MonitorBadge("Fora do ar: ${summary.offline}", StatusError.copy(alpha = 0.2f), Color(0xFFFCA5A5))
                 }
                 if (summary.offline > 0) {
+                    Spacer(modifier = Modifier.width(6.dp))
                     TextButton(
                         onClick = onMarkAllWorking,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                        modifier = Modifier.testTag("monitor_${monitorNumber}_all_ok_btn")
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("monitor_${monitorNumber}_all_ok_btn")
                     ) {
-                        Text("Todas OK", fontSize = 11.sp, color = BpsGold, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Todas OK",
+                            fontSize = 11.sp,
+                            color = BpsGold,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
                 }
             }
@@ -420,7 +454,9 @@ private fun CameraChannelRow(
                         text = channel.cameraName,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = if (isWorking) "🟢 Funcionando normalmente" else "🔴 Fora do ar",
@@ -474,10 +510,10 @@ private fun CameraStatusButton(
         shape = RoundedCornerShape(8.dp),
         color = if (selected) selectedColor else Color(0xFF1E293B),
         border = BorderStroke(1.dp, if (selected) selectedColor else Color(0xFF334155)),
-        modifier = modifier.height(40.dp)
+        modifier = modifier.heightIn(min = 48.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -491,7 +527,9 @@ private fun CameraStatusButton(
                 text = label,
                 fontSize = 11.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                color = if (selected) Color.White else Color(0xFFCBD5E1)
+                color = if (selected) Color.White else Color(0xFFCBD5E1),
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

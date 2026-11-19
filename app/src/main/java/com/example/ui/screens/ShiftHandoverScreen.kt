@@ -9,14 +9,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,11 +72,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.AttachmentType
 import com.example.data.model.ChecklistTemplateItem
+import com.example.ui.components.BpsResponsiveDialog
+import com.example.ui.components.BpsResponsiveModalScaffold
 import com.example.ui.components.CameraMonitoringCard
 import com.example.ui.components.ObservationAttachmentsSection
 import com.example.ui.components.PdfViewerDialog
@@ -179,52 +185,73 @@ fun ShiftHandoverScreen(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2638)),
                     border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Text(text = "⏳", fontSize = 20.sp)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
+                            Text(text = "⏳", fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "$pendingCount Checklist(s) Aguardando Envio",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = BpsGoldLight
+                                )
+                                Text(
+                                    text = "Salvos no banco Room sem internet",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                        val firstPending = pendingReports.firstOrNull()
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (firstPending?.syncStatus == "AGUARDANDO CONFIRMAÇÃO") {
+                                OutlinedButton(
+                                    onClick = { viewModel.confirmPdfSent(firstPending.id, context) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
                                     Text(
-                                        text = "$pendingCount Checklist(s) Aguardando Envio",
+                                        text = "Confirmar",
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = BpsGoldLight
-                                    )
-                                    Text(
-                                        text = "Salvos no banco Room sem internet",
-                                        fontSize = 11.sp,
-                                        color = Color(0xFF94A3B8)
+                                        color = BpsGoldLight,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
-                            val firstPending = pendingReports.firstOrNull()
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (firstPending?.syncStatus == "AGUARDANDO CONFIRMAÇÃO") {
-                                    OutlinedButton(
-                                        onClick = { viewModel.confirmPdfSent(firstPending.id, context) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("Confirmar", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight)
+                            Button(
+                                onClick = {
+                                    firstPending?.let { report ->
+                                        viewModel.shareSavedReportPdf(report, context)
                                     }
-                                }
-                                Button(
-                                    onClick = {
-                                        firstPending?.let { report ->
-                                            viewModel.shareSavedReportPdf(report, context)
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Enviar PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text(
+                                    text = "Enviar PDF",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -252,9 +279,10 @@ fun ShiftHandoverScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Greeting chips
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         listOf("Boa Noite", "Bom Dia", "Boa Tarde").forEach { greeting ->
                             val selected = formState.greeting == greeting
@@ -650,7 +678,7 @@ fun ShiftHandoverScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -673,11 +701,21 @@ fun ShiftHandoverScreen(
                         OutlinedButton(
                             onClick = onOpenResidentNotices,
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.6f)),
-                            modifier = Modifier.testTag("open_resident_notices_panel_btn")
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("open_resident_notices_panel_btn")
                         ) {
-                            Text("Ver Avisos", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight)
+                            Text(
+                                text = "Ver Avisos",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BpsGoldLight,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
@@ -725,14 +763,16 @@ fun ShiftHandoverScreen(
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = "[${notice.unitFullIdentifier}] ${notice.noticeTypeDisplayName} • ${notice.residentName}",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = Color.White
+                                            color = Color.White,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         val extra = buildList {
                                             add("Data: ${notice.formattedScheduledDate()}${if (notice.scheduledTime.isNotBlank()) " ${notice.scheduledTime}" else ""}")
@@ -741,14 +781,18 @@ fun ShiftHandoverScreen(
                                         Text(
                                             text = extra,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF94A3B8)
+                                            color = Color(0xFF94A3B8),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                     Text(
                                         text = notice.statusDisplayName.uppercase(),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (notice.status == "PENDENTE") Color(0xFFF59E0B) else Color(0xFF38BDF8)
+                                        color = if (notice.status == "PENDENTE") Color(0xFFF59E0B) else Color(0xFF38BDF8),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -893,7 +937,7 @@ fun ShiftHandoverScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp)
+                                    .heightIn(min = 50.dp)
                                     .testTag("share_pdf_button"),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
@@ -910,7 +954,9 @@ fun ShiftHandoverScreen(
                                 Text(
                                     text = "Enviar PDF pelo WhatsApp",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
+                                    fontSize = 14.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
 
@@ -920,7 +966,7 @@ fun ShiftHandoverScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(44.dp)
+                                    .heightIn(min = 48.dp)
                                     .testTag("view_pdf_button"),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
@@ -938,7 +984,9 @@ fun ShiftHandoverScreen(
                                 Text(
                                     text = "Visualizar PDF antes de enviar",
                                     fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.sp
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -946,55 +994,120 @@ fun ShiftHandoverScreen(
                 }
 
                 // Local save actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.saveCurrentReportToHistory(activeItems)
-                            android.widget.Toast.makeText(context, "Registro salvo no histórico!", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .testTag("save_report_button"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = BpsGoldLight
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Save,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = BpsGold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Salvar Registro", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    }
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val stackSaveButtons = maxWidth < 310.dp
+                    if (stackSaveButtons) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.saveCurrentReportToHistory(activeItems)
+                                    android.widget.Toast.makeText(context, "Registro salvo no histórico!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("save_report_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = BpsGoldLight
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Save,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = BpsGold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Salvar Registro", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                            }
 
-                    Button(
-                        onClick = {
-                            viewModel.saveReportOffline(context, activeItems)
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .testTag("save_offline_room_button"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF1E293B),
-                            contentColor = BpsGoldLight
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.6f))
-                    ) {
-                        Text(
-                            text = "Salvar Offline",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                            Button(
+                                onClick = {
+                                    viewModel.saveReportOffline(context, activeItems)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("save_offline_room_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1E293B),
+                                    contentColor = BpsGoldLight
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.6f))
+                            ) {
+                                Text(
+                                    text = "Salvar Offline",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.saveCurrentReportToHistory(activeItems)
+                                    android.widget.Toast.makeText(context, "Registro salvo no histórico!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("save_report_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = BpsGoldLight
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.5f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Save,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = BpsGold
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Salvar Registro", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.saveReportOffline(context, activeItems)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("save_offline_room_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1E293B),
+                                    contentColor = BpsGoldLight
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.2.dp, BpsGold.copy(alpha = 0.6f))
+                            ) {
+                                Text(
+                                    text = "Salvar Offline",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1051,6 +1164,7 @@ fun ShiftHandoverScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StandardChecklistItemCard(
     item: ChecklistTemplateItem,
@@ -1175,69 +1289,127 @@ fun StandardChecklistItemCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Status Selector Chips
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // OK Button
-                FilterChip(
-                    selected = currentState.status == "OK",
-                    onClick = { onStatusChange("OK", "") },
-                    label = { Text("OK", fontSize = 12.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val useWrapChips = maxWidth < 330.dp
+                if (useWrapChips) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        FilterChip(
+                            selected = currentState.status == "OK",
+                            onClick = { onStatusChange("OK", "") },
+                            label = { Text("OK", fontSize = 12.sp, maxLines = 1, softWrap = false) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = StatusOk,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            )
                         )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = StatusOk,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Atenção Button
-                FilterChip(
-                    selected = currentState.status == "ATENCAO",
-                    onClick = { onStatusChange("ATENCAO", obsText) },
-                    label = { Text("Atenção", fontSize = 12.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
+                        FilterChip(
+                            selected = currentState.status == "ATENCAO",
+                            onClick = { onStatusChange("ATENCAO", obsText) },
+                            label = { Text("Atenção", fontSize = 12.sp, maxLines = 1, softWrap = false) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = StatusWarning,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            )
                         )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = StatusWarning,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Defeito / Fora do ar Button
-                FilterChip(
-                    selected = currentState.status == "DEFEITO",
-                    onClick = { onStatusChange("DEFEITO", obsText) },
-                    label = { Text("Defeito", fontSize = 12.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.ErrorOutline,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
+                        FilterChip(
+                            selected = currentState.status == "DEFEITO",
+                            onClick = { onStatusChange("DEFEITO", obsText) },
+                            label = { Text("Defeito", fontSize = 12.sp, maxLines = 1, softWrap = false) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = StatusError,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            )
                         )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = StatusError,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = currentState.status == "OK",
+                            onClick = { onStatusChange("OK", "") },
+                            label = { Text("OK", fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = StatusOk,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = currentState.status == "ATENCAO",
+                            onClick = { onStatusChange("ATENCAO", obsText) },
+                            label = { Text("Atenção", fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = StatusWarning,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = currentState.status == "DEFEITO",
+                            onClick = { onStatusChange("DEFEITO", obsText) },
+                            label = { Text("Defeito", fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = StatusError,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             // Observation & Photo field when status is not OK (or irregularity)
@@ -1277,10 +1449,10 @@ fun StandardChecklistItemCard(
                                 onClick = { cameraLauncher.launch(null) },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(42.dp)
+                                    .heightIn(min = 48.dp)
                                     .testTag("take_photo_btn_${item.id}"),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, BpsGold.copy(alpha = 0.6f))
                             ) {
                                 Icon(
@@ -1290,7 +1462,7 @@ fun StandardChecklistItemCard(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Tirar Foto", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight)
+                                Text("Tirar Foto", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BpsGoldLight, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                             }
 
                             OutlinedButton(
@@ -1301,10 +1473,10 @@ fun StandardChecklistItemCard(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(42.dp)
+                                    .heightIn(min = 48.dp)
                                     .testTag("gallery_photo_btn_${item.id}"),
                                 shape = RoundedCornerShape(8.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Image,
@@ -1312,7 +1484,7 @@ fun StandardChecklistItemCard(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Galeria", fontSize = 12.sp)
+                                Text("Galeria", fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     } else {
@@ -1368,7 +1540,9 @@ fun StandardChecklistItemCard(
 
                                 IconButton(
                                     onClick = onRemovePhoto,
-                                    modifier = Modifier.testTag("remove_photo_btn_${item.id}")
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("remove_photo_btn_${item.id}")
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
@@ -1386,48 +1560,54 @@ fun StandardChecklistItemCard(
     }
 
     if (showPhotoPreviewDialog && currentState.photoPath != null) {
-        androidx.compose.material3.AlertDialog(
+        BpsResponsiveDialog(
             onDismissRequest = { showPhotoPreviewDialog = false },
-            title = {
-                Text(
-                    text = "Foto: ${item.emoji} ${item.title}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(260.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center
+            dialogTestTag = "checklist_photo_preview_dialog_${item.id}",
+            dialogMaxWidth = 560.dp
+        ) { metrics ->
+            BpsResponsiveModalScaffold(
+                title = "Foto: ${item.emoji} ${item.title}",
+                onDismiss = { showPhotoPreviewDialog = false },
+                metrics = metrics,
+                footerContent = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        AsyncImage(
-                            model = File(currentState.photoPath),
-                            contentDescription = "Foto ampliada",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                        )
-                    }
-                    if (obsText.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Obs: $obsText",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Button(
+                            onClick = { showPhotoPreviewDialog = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = BpsGold),
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
+                            Text("Fechar", color = Color(0xFF1E1400), fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showPhotoPreviewDialog = false }) {
-                    Text("Fechar")
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp, max = (metrics.availableHeight * 0.55f).coerceAtLeast(180.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = File(currentState.photoPath),
+                        contentDescription = "Foto ampliada",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                    )
+                }
+                if (obsText.isNotBlank()) {
+                    Text(
+                        text = "Obs: $obsText",
+                        fontSize = 12.sp,
+                        color = Color(0xFFCBD5E1)
+                    )
                 }
             }
-        )
+        }
     }
 }
 
