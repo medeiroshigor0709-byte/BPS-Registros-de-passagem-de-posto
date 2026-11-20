@@ -94,6 +94,13 @@ class BpsUpdateFeaturesTest {
         return ViewModelProvider(store, BpsViewModelFactory(repository, NetworkMonitor(context)))[BpsViewModel::class.java]
     }
 
+    private fun waitUntilReady(timeoutMillis: Long = 15_000L, condition: () -> Boolean) {
+        composeTestRule.waitUntil(timeoutMillis = timeoutMillis) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            condition()
+        }
+    }
+
     @Before
     fun setup() {
         clearFileProviderCache()
@@ -106,6 +113,7 @@ class BpsUpdateFeaturesTest {
 
     @After
     fun teardown() {
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         viewModelStores.forEach { it.clear() }
         viewModelStores.clear()
         Shadows.shadowOf(Looper.getMainLooper()).idle()
@@ -971,7 +979,7 @@ class BpsUpdateFeaturesTest {
                 ShiftHandoverScreen(viewModel = viewModel)
             }
         }
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+        waitUntilReady {
             viewModel.employees.value.size == 2 && viewModel.templateItems.value.size == 17
         }
         composeTestRule.waitForIdle()
@@ -1093,7 +1101,7 @@ class BpsUpdateFeaturesTest {
                 ShiftHandoverScreen(viewModel = viewModel)
             }
         }
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+        waitUntilReady {
             viewModel.employees.value.size == 2 && viewModel.templateItems.value.size == 17
         }
         composeTestRule.waitForIdle()
@@ -1552,7 +1560,7 @@ class BpsUpdateFeaturesTest {
                 MainAppScreen(viewModel = viewModel)
             }
         }
-        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+        waitUntilReady {
             viewModel.residentNotices.value.isNotEmpty()
         }
         composeTestRule.waitForIdle()

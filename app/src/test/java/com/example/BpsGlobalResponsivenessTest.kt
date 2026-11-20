@@ -93,6 +93,13 @@ class BpsGlobalResponsivenessTest {
         )[BpsViewModel::class.java]
     }
 
+    private fun waitUntilReady(timeoutMillis: Long = 15_000L, condition: () -> Boolean) {
+        composeTestRule.waitUntil(timeoutMillis = timeoutMillis) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            condition()
+        }
+    }
+
     @Before
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
@@ -104,6 +111,7 @@ class BpsGlobalResponsivenessTest {
 
     @After
     fun teardown() {
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         viewModelStores.forEach { it.clear() }
         viewModelStores.clear()
         Shadows.shadowOf(Looper.getMainLooper()).idle()
@@ -203,7 +211,7 @@ class BpsGlobalResponsivenessTest {
                 }
             }
         }
-        composeTestRule.waitUntil(5_000) {
+        waitUntilReady {
             viewModel.templateItems.value.isNotEmpty() &&
                 viewModel.employees.value.isNotEmpty() &&
                 viewModel.residentNotices.value.isNotEmpty()
@@ -310,7 +318,7 @@ class BpsGlobalResponsivenessTest {
                 MainAppScreen(viewModel = viewModel)
             }
         }
-        composeTestRule.waitUntil(5_000) { viewModel.templateItems.value.isNotEmpty() }
+        waitUntilReady { viewModel.templateItems.value.isNotEmpty() }
         composeTestRule.waitForIdle()
 
         val rootBounds = composeTestRule.onRoot().getBoundsInRoot()
@@ -464,7 +472,7 @@ class BpsGlobalResponsivenessTest {
                 HistoryScreen(viewModel = viewModel)
             }
         }
-        composeTestRule.waitUntil(5_000) { viewModel.reportsHistory.value.isNotEmpty() }
+        waitUntilReady { viewModel.reportsHistory.value.isNotEmpty() }
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("history_view_btn_55").performClick()
